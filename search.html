@@ -1,0 +1,91 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search productions | Student Film Connection</title>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%233b6bf5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>S</text></svg>">
+
+<body data-page="search">
+<div class="page">
+  <div class="container">
+    <div class="page-head">
+      <h1>Browse productions</h1>
+      <p>Films and shoots looking for crew and cast, <span id="nearNote">closest to you first</span>.</p>
+    </div>
+
+    <div class="filters">
+      <div class="field" style="flex:2">
+        <label>Search</label>
+        <input class="input" id="fQuery" placeholder="Title, logline, keyword…">
+      </div>
+      <div class="field">
+        <label>Role needed</label>
+        <select class="select" id="fRole"><option value="">Any role</option></select>
+      </div>
+      <div class="field">
+        <label>Pay</label>
+        <select class="select" id="fPaid">
+          <option value="">Any</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>When</label>
+        <select class="select" id="fWhen">
+          <option value="">Anytime</option><option value="week">Next 7 days</option><option value="month">Next 30 days</option>
+        </select>
+      </div>
+      <div class="field" style="flex:0 0 auto;min-width:auto">
+        <label>Near</label>
+        <input class="input" id="fArea" placeholder="Area code" style="width:120px">
+      </div>
+    </div>
+
+    <div id="resultCount" class="muted" style="margin-bottom:16px;font-size:.9rem"></div>
+    <div class="grid grid-3" id="results"></div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script>
+(async function () {
+  const user = await UI.mountChrome();
+  const $ = (id) => document.getElementById(id);
+
+  // populate role filter
+  $("fRole").innerHTML = '<option value="">Any role</option>' +
+    window.SFC_CONFIG.ROLES.map((r) => `<option>${UI.esc(r)}</option>`).join("");
+
+  // prefill area from profile
+  if (user?.area_code) { $("fArea").value = user.area_code; $("nearNote").textContent = `closest to ${UI.esc(user.location || user.area_code)} first`; }
+
+  async function run() {
+    const area = $("fArea").value.trim();
+    const filters = {
+      query: $("fQuery").value.trim(),
+      role: $("fRole").value,
+      paid: $("fPaid").value,
+      when: $("fWhen").value,
+    };
+    const list = await SFC.listProductions(filters, area);
+    $("resultCount").textContent = `${list.length} production${list.length === 1 ? "" : "s"}` +
+      (area ? " · sorted by distance" : "");
+    $("results").innerHTML = list.length
+      ? list.map((p) => UI.prodCard(p)).join("")
+      : `<div class="empty" style="grid-column:1/-1"><div class="ico">🎞️</div>
+         <h3>No productions match</h3><p>Try clearing a filter or widening your search.</p></div>`;
+    UI.observeReveals();
+  }
+
+  let t;
+  const debounced = () => { clearTimeout(t); t = setTimeout(run, 200); };
+  ["fQuery", "fArea"].forEach((id) => $(id).addEventListener("input", debounced));
+  ["fRole", "fPaid", "fWhen"].forEach((id) => $(id).addEventListener("change", run));
+
+  // deep-link ?role=
+  const qp = new URLSearchParams(location.search);
+  if (qp.get("role")) $("fRole").value = qp.get("role");
+  run();
+})();
+</script>

@@ -1,0 +1,210 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Production | Student Film Connection</title>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%233b6bf5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>S</text></svg>">
+
+<body data-page="search">
+<div class="page">
+  <div class="container">
+    <a href="search.html" class="soft" style="font-weight:600;font-size:.9rem">← Back to productions</a>
+    <div id="root" style="margin-top:18px"></div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script>
+(async function () {
+  const user = await UI.mountChrome();
+  const root = document.getElementById("root");
+  const id = new URLSearchParams(location.search).get("id");
+  const p = id ? await SFC.getProduction(id) : null;
+
+  if (!p) {
+    root.innerHTML = `<div class="empty"><div class="ico">🎬</div><h2>Production not found</h2>
+      <p>It may have been removed.</p><a class="btn btn-soft" href="search.html">Browse productions</a></div>`;
+    return;
+  }
+
+  const creator = await SFC.getProfile(p.creator_id);
+  const isOwner = user && user.id === p.creator_id;
+  const apps = await SFC.listApplicationsForProduction(p.id);
+  const myApp = user ? apps.find((a) => a.applicant_id === user.id) : null;
+
+  const rolesNeeded = p.open_to_any
+    ? `<span class="chip blue">Open to any role</span>`
+    : (p.roles_needed || []).map((r) =>
+        `<span class="tag" style="font-size:.9rem;padding:7px 13px">${UI.esc(r.role)} · need ${r.count}</span>`).join(" ");
+
+  // ---- apply / owner panel ----
+  let sidePanel;
+  if (isOwner) {
+    sidePanel = await ownerPanel();
+  } else if (myApp) {
+    const statusMap = {
+      pending: ['amber', "Application pending", "The creator hasn't responded yet. Hang tight!"],
+      accepted: ['green', "You're in! 🎉", "You've been accepted. Contact details are below."],
+      declined: ['gray', "Not this time", "The creator went another direction for this one."],
+    };
+    const [cls, title, note] = statusMap[myApp.status];
+    sidePanel = `<div class="card card-pad">
+      <span class="chip ${cls}">${title}</span>
+      <p class="soft" style="margin:14px 0 0">${note}</p>
+      ${myApp.status === "accepted" ? contactBlock(creator) : ""}
+    </div>`;
+  } else {
+    sidePanel = `<div class="card card-pad">
+      <h3 style="margin-bottom:6px">Want in?</h3>
+      <p class="soft" style="font-size:.92rem">Apply for a role and the creator will review your request.</p>
+      <button class="btn btn-primary btn-block btn-lg" id="applyBtn" style="margin-top:14px">Apply to join</button>
+    </div>`;
+  }
+
+  root.innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="detail-hero">
+          <div class="band"></div>
+          <div class="band-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+              <div>
+                <span class="chip">${p.type === "shoot" ? "Single shoot" : "Film project"}</span>
+                <h1 style="font-size:2.2rem;margin:12px 0 6px">${UI.esc(p.title)}</h1>
+                <p class="soft" style="font-size:1.1rem;margin:0">${UI.esc(p.logline)}</p>
+              </div>
+              ${UI.statusChip(p.status)}
+            </div>
+            <div class="meta" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px">
+              <span class="chip">📍 ${UI.esc(p.location)}</span>
+              <span class="chip">📅 ${UI.fmtDateRange(p.start_date, p.end_date)}</span>
+              <span class="chip ${p.paid ? "green" : "gray"}">${p.paid ? "Paid" : "Unpaid"}</span>
+            </div>
+          </div>
+        </div>
+
+        ${p.awards ? `<div class="demo-banner" style="background:linear-gradient(90deg,#fef6e0,transparent);border-color:#f5e2b8;color:#a9750e">★ ${UI.esc(p.awards)}</div>` : ""}
+
+        ${p.description ? `<h3>About this production</h3><p class="soft" style="white-space:pre-wrap;font-size:1.02rem">${UI.esc(p.description)}</p>` : ""}
+
+        <h3 style="margin-top:26px">Roles ${p.open_to_any ? "" : "needed"}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">${rolesNeeded}</div>
+
+        ${p.gear_provided ? `<h3 style="margin-top:26px">What's provided</h3><p class="soft">${UI.esc(p.gear_provided)}</p>` : ""}
+
+        <h3 style="margin-top:26px">Posted by</h3>
+        <div class="card card-pad" style="display:flex;align-items:center;gap:14px">
+          <div class="avatar" style="width:52px;height:52px">${UI.initials(creator?.full_name)}</div>
+          <div style="flex:1">
+            <strong>${UI.esc(creator?.full_name || "Unknown")}</strong>
+            ${creator?.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
+            <div class="muted" style="font-size:.88rem">@${UI.esc(creator?.username || "")} · ${UI.esc(creator?.location || "")}</div>
+          </div>
+        </div>
+      </div>
+
+      <div><div class="sticky-side">${sidePanel}</div></div>
+    </div>`;
+
+  UI.observeReveals();
+
+  // ---- apply flow ----
+  const applyBtn = document.getElementById("applyBtn");
+  if (applyBtn) applyBtn.onclick = async () => {
+    const u = await UI.requireAuth("apply");
+    if (!u) return;
+    openApplyModal(p, u);
+  };
+
+  if (isOwner) wireOwnerActions();
+
+  // ---------- helpers ----------
+  function contactBlock(c) {
+    if (!c) return "";
+    const rows = [
+      c.contact_email && `<div class="person-row"><span>✉️</span><a href="mailto:${UI.esc(c.contact_email)}">${UI.esc(c.contact_email)}</a></div>`,
+      c.contact_ig && `<div class="person-row"><span>📷</span><span>${UI.esc(c.contact_ig)}</span></div>`,
+      c.contact_phone && `<div class="person-row"><span>📱</span><span>${UI.esc(c.contact_phone)}</span></div>`,
+    ].filter(Boolean).join("");
+    return `<hr class="divider"><strong style="font-family:'Space Grotesk'">Reach the creator</strong>${rows || '<p class="muted">No contact info listed.</p>'}`;
+  }
+
+  function openApplyModal(prod, u) {
+    const roleOpts = prod.open_to_any
+      ? window.SFC_CONFIG.ROLES : (prod.roles_needed || []).map((r) => r.role);
+    const m = UI.modal(`
+      <div class="modal-head"><h2>Apply to ${UI.esc(prod.title)}</h2>
+        <p class="muted">Tell the creator what you'd bring.</p></div>
+      <div class="modal-body">
+        <form id="applyForm">
+          <div class="field"><label>Role you're applying for</label>
+            <select class="select" name="role">${roleOpts.map((r) => `<option>${UI.esc(r)}</option>`).join("")}</select></div>
+          <div class="field"><label>Message <span class="muted">(optional)</span></label>
+            <textarea class="textarea" name="message" placeholder="Your experience, availability, a reel link…"></textarea></div>
+          <button class="btn btn-primary btn-block btn-lg" type="submit">Send application</button>
+        </form>
+      </div>`);
+    m.q("#applyForm").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await SFC.apply(prod.id, e.target.role.value, e.target.message.value.trim());
+        m.close(); UI.toast("Application sent!", "ok");
+        setTimeout(() => location.reload(), 700);
+      } catch (err) { UI.toast(err.message, "err"); }
+    };
+  }
+
+  async function ownerPanel() {
+    const applicantIds = apps.map((a) => a.applicant_id);
+    const profiles = applicantIds.length ? await SFC.getProfiles(applicantIds) : [];
+    const byId = Object.fromEntries(profiles.map((x) => [x.id, x]));
+    const accepted = apps.filter((a) => a.status === "accepted");
+    const pending = apps.filter((a) => a.status === "pending");
+
+    const row = (a) => {
+      const c = byId[a.applicant_id] || {};
+      const actions = a.status === "pending"
+        ? `<div style="display:flex;gap:6px">
+             <button class="btn btn-sm btn-primary" data-accept="${a.id}">Accept</button>
+             <button class="btn btn-sm btn-ghost" data-decline="${a.id}">Pass</button></div>`
+        : `<span class="chip ${a.status === "accepted" ? "green" : "gray"}">${a.status}</span>`;
+      return `<div class="person-row">
+        <div class="avatar">${UI.initials(c.full_name)}</div>
+        <div style="flex:1;min-width:0">
+          <strong>${UI.esc(c.full_name || "Applicant")}</strong>
+          <div class="muted" style="font-size:.82rem">${UI.esc(a.role)} · ${UI.esc(c.experience || "")}</div>
+          ${a.message ? `<div class="soft" style="font-size:.85rem;margin-top:4px">"${UI.esc(a.message)}"</div>` : ""}
+          ${a.status === "accepted" ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${[c.contact_email, c.contact_ig, c.contact_phone].filter(Boolean).map(UI.esc).join(" · ")}</div>` : ""}
+        </div>
+        ${actions}
+      </div>`;
+    };
+
+    return `<div class="card card-pad">
+        <span class="chip blue">You own this</span>
+        <h3 style="margin:12px 0 4px">Roster</h3>
+        <p class="muted" style="font-size:.85rem;margin:0 0 8px">${accepted.length} accepted · ${pending.length} pending</p>
+        <div id="applicantList">
+          ${apps.length ? [...pending, ...accepted, ...apps.filter(a=>a.status==='declined')].map(row).join("")
+            : '<p class="muted" style="padding:14px 0">No applications yet. Share your production!</p>'}
+        </div>
+        <hr class="divider">
+        <a class="btn btn-ghost btn-block" href="create.html">+ Post another</a>
+      </div>`;
+  }
+
+  function wireOwnerActions() {
+    root.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => decide(b.dataset.accept, "accepted"));
+    root.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => decide(b.dataset.decline, "declined"));
+  }
+  async function decide(appId, status) {
+    try {
+      await SFC.setApplicationStatus(appId, status);
+      UI.toast(status === "accepted" ? "Added to your roster" : "Applicant passed", "ok");
+      setTimeout(() => location.reload(), 500);
+    } catch (err) { UI.toast(err.message, "err"); }
+  }
+})();
+</script>
