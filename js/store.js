@@ -226,12 +226,21 @@
         if (!id) return null;
         return must(await client().from("profiles").select("*").eq("id", id).single());
       },
+      // The profile row is created server-side by the handle_new_user()
+      // trigger in supabase/schema.sql, which reads these fields back out
+      // of raw_user_meta_data. We cannot insert it from here: signUp does
+      // not return a session when email confirmation is on, so the insert
+      // would be anonymous and RLS would reject it.
       async signUp(email, password, profile) {
-        const { data, error } = await client().auth.signUp({ email, password });
+        const { data, error } = await client().auth.signUp({
+          email, password, options: { data: profile },
+        });
         if (error) throw new Error(error.message);
-        const id = data.user.id;
-        return must(await client().from("profiles")
-          .insert({ id, contact_email: email, ...profile }).select().single());
+        if (!data.session) {
+          throw new Error(
+            "Account created. Check your email to confirm it, then log in.");
+        }
+        return this.getCurrentUser();
       },
       async signIn(email, password) {
         const { error } = await client().auth.signInWithPassword({ email, password });
