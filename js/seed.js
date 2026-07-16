@@ -6,7 +6,7 @@
 window.SFC_SEED = {
   profiles: [
     {
-      id: "u_maya", username: "mayadp", full_name: "Maya Okonkwo",
+      id: "u_maya", first_name: "Maya", last_name: "Okonkwo", username: "mayadp", full_name: "Maya Okonkwo",
       is_group: false, group_name: "",
       roles: ["Cinematographer (DP)", "Colorist"], experience: "advanced",
       gear: "Blackmagic Pocket 6K, DZOFilm primes, DJI RS3",
@@ -15,7 +15,7 @@ window.SFC_SEED = {
       contact_email: "maya@example.edu", contact_ig: "@maya.shoots", contact_phone: "",
     },
     {
-      id: "u_theo", username: "theocuts", full_name: "Theo Alvarez",
+      id: "u_theo", first_name: "Theo", last_name: "Alvarez", username: "theocuts", full_name: "Theo Alvarez",
       is_group: false, group_name: "",
       roles: ["Editor", "VFX Artist"], experience: "intermediate",
       gear: "M2 Max, DaVinci Resolve Studio, After Effects",
@@ -24,7 +24,7 @@ window.SFC_SEED = {
       contact_email: "theo@example.edu", contact_ig: "@theo.cuts", contact_phone: "",
     },
     {
-      id: "u_lenscollective", username: "lenscollective", full_name: "Lens Collective",
+      id: "u_lenscollective", first_name: "Lens", last_name: "Collective", username: "lenscollective", full_name: "Lens Collective",
       is_group: true, group_name: "Lens Collective",
       roles: ["Producer", "Production Designer"], experience: "advanced",
       gear: "Grip truck, 3x HMI kit, dolly + track",

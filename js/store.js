@@ -195,8 +195,32 @@
       const apps = read(LS.applications, []);
       const i = apps.findIndex((a) => a.id === appId);
       apps[i].status = status;
+      apps[i].updated_at = new Date().toISOString();
       write(LS.applications, apps);
       return apps[i];
+    },
+
+    async searchProfiles(query) {
+      const q = query.trim().toLowerCase().replace(/^@/, "");
+      if (!q) return [];
+      return read(LS.profiles, []).filter((p) =>
+        (p.username || "").toLowerCase().includes(q) ||
+        (p.full_name || "").toLowerCase().includes(q)).slice(0, 8);
+    },
+
+    // Owner puts a known collaborator straight onto the roster.
+    async addCrew(productionId, applicantId, role) {
+      const apps = read(LS.applications, []);
+      if (apps.some((a) => a.production_id === productionId && a.applicant_id === applicantId))
+        throw new Error("They're already on this production.");
+      const record = {
+        id: uid("a"), production_id: productionId, applicant_id: applicantId,
+        role, message: "Added by the creator", status: "accepted",
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      apps.push(record);
+      write(LS.applications, apps);
+      return record;
     },
   };
 
@@ -307,6 +331,19 @@
       },
       async setApplicationStatus(appId, status) {
         return must(await client().from("applications").update({ status }).eq("id", appId).select().single());
+      },
+      async searchProfiles(query) {
+        const q = query.trim().replace(/^@/, "");
+        if (!q) return [];
+        return must(await client().from("profiles").select("*")
+          .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).limit(8));
+      },
+      // Relies on the "owner adds crew" insert policy from migration_002.sql.
+      async addCrew(productionId, applicantId, role) {
+        return must(await client().from("applications").insert({
+          production_id: productionId, applicant_id: applicantId,
+          role, message: "Added by the creator", status: "accepted",
+        }).select().single());
       },
     };
   })();

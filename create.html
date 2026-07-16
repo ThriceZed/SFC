@@ -17,7 +17,7 @@
     <form id="prodForm" class="card card-pad" style="padding:30px;display:none">
       <div class="field">
         <label>Title</label>
-        <input class="input" name="title" required placeholder="e.g. Neon Veins">
+        <input class="input" name="title" required placeholder="e.g. Fly Away">
       </div>
 
       <div class="field">
@@ -57,7 +57,14 @@
 
       <div class="row2">
         <div class="field"><label>Start date</label><input class="input" type="date" name="start_date" required></div>
-        <div class="field"><label>End date</label><input class="input" type="date" name="end_date"></div>
+        <div class="field">
+          <label>End date</label>
+          <input class="input" type="date" name="end_date" id="endDate">
+          <label class="switch" style="margin-top:10px">
+            <input type="checkbox" id="endTBD"><span class="track"></span>
+            <span>End date is TBD</span>
+          </label>
+        </div>
       </div>
       <div class="row2">
         <div class="field"><label>Location</label><input class="input" name="location" required placeholder="Austin, TX"></div>
@@ -72,12 +79,6 @@
       <div class="field">
         <label>Gear / what you provide <span class="muted">(optional)</span></label>
         <input class="input" name="gear_provided" placeholder="Camera, lighting, meals, transport…">
-      </div>
-
-      <div class="field">
-        <label>Awards / recognition <span class="muted">(optional)</span></label>
-        <input class="input" name="awards" placeholder="Festival selections, prior wins…">
-        <div class="hint">Notable productions can be featured on the homepage.</div>
       </div>
 
       <button class="btn btn-primary btn-block btn-lg" type="submit">Post production →</button>
@@ -116,6 +117,14 @@
   const openAny = $("#openAny"), rolesBlock = $("#rolesBlock");
   openAny.onchange = () => { rolesBlock.style.opacity = openAny.checked ? ".4" : "1"; rolesBlock.style.pointerEvents = openAny.checked ? "none" : ""; };
 
+  // TBD end date: null it out and grey the picker.
+  const endDate = $("#endDate"), endTBD = $("#endTBD");
+  endTBD.onchange = () => {
+    endDate.disabled = endTBD.checked;
+    endDate.style.opacity = endTBD.checked ? ".45" : "1";
+    if (endTBD.checked) endDate.value = "";
+  };
+
   // role count rows
   function refreshCounts() {
     const checked = [...$("#rolesSel").querySelectorAll("input:checked")];
@@ -145,13 +154,12 @@
       open_to_any: openAny.checked,
       roles_needed,
       start_date: form.start_date.value,
-      end_date: form.end_date.value || form.start_date.value,
+      // null end_date means TBD; the UI renders it as "Sep 1, 2026 – TBD".
+      end_date: endTBD.checked ? null : (form.end_date.value || form.start_date.value),
       location: form.location.value.trim(),
       area_code: form.area_code.value.trim(),
       paid: form.paid.checked,
       gear_provided: form.gear_provided.value.trim(),
-      awards: form.awards.value.trim(),
-      notable: !!form.awards.value.trim(),
     };
     try {
       UI.setBusy(form, true);

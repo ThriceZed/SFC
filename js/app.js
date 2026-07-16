@@ -9,13 +9,24 @@ const UI = (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const initials = (name) => (name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+  // "@name" for a handle, or "" when blank, so a bare "@" never renders.
+  // Tolerates the user typing the @ themselves.
+  const handle = (v) => {
+    const s = String(v ?? "").trim().replace(/^@+/, "");
+    return s ? "@" + s : "";
+  };
+
+  // A null end_date means the creator marked it TBD.
   function fmtDateRange(a, b) {
-    const opt = { month: "short", day: "numeric" };
-    const da = new Date(a + "T00:00:00"), db = new Date(b + "T00:00:00");
     if (!a) return "Dates TBD";
-    if (a === b || !b) return da.toLocaleDateString(undefined, { ...opt, year: "numeric" });
-    const sameYear = da.getFullYear() === db.getFullYear();
-    return `${da.toLocaleDateString(undefined, opt)} – ${db.toLocaleDateString(undefined, { ...opt, year: "numeric" })}`;
+    const opt = { month: "short", day: "numeric" };
+    const full = { ...opt, year: "numeric" };
+    const da = new Date(a + "T00:00:00");
+    if (!b) return da.toLocaleDateString(undefined, full) + " – TBD";
+    if (a === b) return da.toLocaleDateString(undefined, full);
+    const db = new Date(b + "T00:00:00");
+    return `${da.toLocaleDateString(undefined, opt)} – ${db.toLocaleDateString(undefined, full)}`;
   }
   const statusChip = (s) => ({
     recruiting: '<span class="chip green">● Recruiting</span>',
@@ -47,20 +58,25 @@ const UI = (() => {
     const active = document.body.dataset.page;
     const user = await SFC.getCurrentUser();
 
-    // top nav
+    // Signed-in users have no home page: it's a marketing page for visitors,
+    // so drop it from both navs and point the brand at Search instead.
+    const navPages = PAGES.filter((p) => p.id !== "account" && !(user && p.id === "home"));
+    const homeHref = user ? "search.html" : "index.html";
+
     const nav = el("nav", "nav");
     nav.innerHTML = `
       <div class="container">
-        <a class="brand" href="index.html">
+        <a class="brand" href="${homeHref}">
           <span class="logo">SFC</span> Student Film Connection
         </a>
         <div class="nav-links">
-          ${PAGES.filter((p) => p.id !== "account").map((p) =>
+          ${navPages.map((p) =>
             `<a href="${p.href}" class="${p.id === active ? "active" : ""}">${p.label}</a>`).join("")}
         </div>
         <div class="nav-right">
           ${user
-            ? `<a class="btn btn-ghost btn-sm" href="account.html">${esc(user.full_name?.split(" ")[0] || "Account")}</a>`
+            ? `<button class="notif-btn" data-notif title="Notifications">🔔<span class="notif-badge" hidden>0</span></button>
+               <a class="btn btn-ghost btn-sm" href="account.html">${esc(user.first_name || user.full_name?.split(" ")[0] || "Account")}</a>`
             : `<button class="btn btn-primary btn-sm" data-auth="login">Sign up</button>`}
         </div>
       </div>`;
@@ -68,12 +84,12 @@ const UI = (() => {
     const authBtn = nav.querySelector("[data-auth]");
     if (authBtn) authBtn.onclick = () => openAuth("signup");
 
-    // mobile bottom nav
     const mnav = el("nav", "mobile-nav");
-    mnav.innerHTML = PAGES.map((p) =>
+    mnav.innerHTML = (user ? PAGES.filter((p) => p.id !== "home") : PAGES).map((p) =>
       `<a href="${p.href}" class="${p.id === active ? "active" : ""}"><span class="mi">${p.icon}</span>${p.label}</a>`).join("");
     document.body.appendChild(mnav);
 
+    if (user) initNotifications(user, nav);
     mountFooter();
     observeReveals();
     return user;
@@ -107,6 +123,93 @@ const UI = (() => {
         </div>
       </div>`;
     document.body.appendChild(f);
+  }
+
+  // ---------- notifications ----------
+  // Two feeds merged: verdicts on applications I sent, and people applying
+  // to productions I own. "Unread" is anything newer than the last time the
+  // panel was opened, kept per-user in localStorage.
+  const SEEN_KEY = (id) => `sfc.notifsSeen.${id}`;
+
+  async function loadNotifications(user) {
+    const items = [];
+
+    const mine = await SFC.listUserApplications(user.id);
+    for (const a of mine) {
+      if (a.status === "pending") continue;
+      const p = await SFC.getProduction(a.production_id);
+      if (!p) continue;
+      items.push({
+        when: a.updated_at || a.created_at,
+        icon: a.status === "accepted" ? "✅" : "📪",
+        text: a.status === "accepted"
+          ? `You're on the roster for <strong>${esc(p.title)}</strong>`
+          : `<strong>${esc(p.title)}</strong> went another direction`,
+        href: `production.html?id=${encodeURIComponent(p.id)}`,
+      });
+    }
+
+    const prods = await SFC.listUserProductions(user.id);
+    for (const p of prods) {
+      const apps = await SFC.listApplicationsForProduction(p.id);
+      const pending = apps.filter((a) => a.status === "pending");
+      if (!pending.length) continue;
+      const profs = await SFC.getProfiles(pending.map((a) => a.applicant_id));
+      const byId = Object.fromEntries(profs.map((x) => [x.id, x]));
+      for (const a of pending) {
+        items.push({
+          when: a.created_at,
+          icon: "✋",
+          text: `<strong>${esc(byId[a.applicant_id]?.full_name || "Someone")}</strong> applied to <strong>${esc(p.title)}</strong> as ${esc(a.role)}`,
+          href: `production.html?id=${encodeURIComponent(p.id)}`,
+        });
+      }
+    }
+
+    items.sort((x, y) => new Date(y.when) - new Date(x.when));
+    return items;
+  }
+
+  async function initNotifications(user, nav) {
+    const btn = nav.querySelector("[data-notif]");
+    if (!btn) return;
+    const badge = btn.querySelector(".notif-badge");
+    let items = [];
+    try { items = await loadNotifications(user); } catch { return; }
+
+    const seen = localStorage.getItem(SEEN_KEY(user.id));
+    const unread = items.filter((i) => !seen || new Date(i.when) > new Date(seen));
+    if (unread.length) {
+      badge.textContent = unread.length > 9 ? "9+" : unread.length;
+      badge.hidden = false;
+    }
+
+    btn.onclick = () => {
+      localStorage.setItem(SEEN_KEY(user.id), new Date().toISOString());
+      badge.hidden = true;
+      const body = items.length
+        ? items.map((i) => `
+            <a class="notif-row" href="${i.href}">
+              <span class="notif-ico">${i.icon}</span>
+              <span class="notif-text">${i.text}
+                <span class="notif-when">${timeAgo(i.when)}</span></span>
+            </a>`).join("")
+        : `<div class="empty" style="padding:36px 10px"><div class="ico">🔔</div>
+             <p style="margin:0">Nothing yet. Apply to a production and you'll hear back here.</p></div>`;
+      modal(`<div class="modal-head"><h2>Notifications</h2></div>
+             <div class="modal-body" style="padding-top:0">${body}</div>`);
+    };
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return "";
+    const secs = (Date.now() - new Date(ts)) / 1000;
+    const steps = [[60, "s"], [3600, "m"], [86400, "h"], [604800, "d"]];
+    if (secs < 60) return "just now";
+    for (let i = 1; i < steps.length; i++) {
+      if (secs < steps[i][0]) return Math.floor(secs / steps[i - 1][0]) + steps[i][1] + " ago";
+    }
+    return Math.floor(secs / 604800) + "w ago";
   }
 
   // ---------- scroll reveal ----------
@@ -159,8 +262,12 @@ const UI = (() => {
         </form>
         <form id="signupForm" style="display:none">
           <div class="row2">
-            <div class="field"><label>Full name</label><input class="input" name="full_name" required placeholder="Alex Rivera"></div>
-            <div class="field"><label>Username</label><input class="input" name="username" required placeholder="alexshoots"></div>
+            <div class="field"><label>First name</label><input class="input" name="first_name" required placeholder="Alex"></div>
+            <div class="field"><label>Last name</label><input class="input" name="last_name" required placeholder="Rivera"></div>
+          </div>
+          <div class="field">
+            <label>Username</label><input class="input" name="username" required placeholder="alexshoots">
+            <div class="hint">Choose carefully: usernames can't be changed later.</div>
           </div>
           <div class="row2">
             <div class="field"><label>Email</label><input class="input" type="email" name="email" required placeholder="you@school.edu"></div>
@@ -182,14 +289,8 @@ const UI = (() => {
             <div class="field"><label>Area / zip code</label><input class="input" name="area_code" placeholder="78701" required></div>
           </div>
           <div class="field"><label>Location</label><input class="input" name="location" placeholder="Austin, TX" required></div>
-          <div class="field"><label>Gear you own <span class="muted">(optional)</span></label>
-            <input class="input" name="gear" placeholder="Camera, lenses, lights…"></div>
-          <div class="row2">
-            <div class="field"><label>Instagram <span class="muted">(optional)</span></label><input class="input" name="contact_ig" placeholder="@handle"></div>
-            <div class="field"><label>Phone <span class="muted">(optional)</span></label><input class="input" name="contact_phone" placeholder="(optional)"></div>
-          </div>
           <button class="btn btn-primary btn-block btn-lg" type="submit">Create account</button>
-          <p class="hint center" style="margin-top:12px">By signing up you can browse, apply, and post shoots.</p>
+          <p class="hint center" style="margin-top:12px">Gear and contact details come next, in your profile.</p>
         </form>
       </div>`, { wide: true });
 
@@ -228,21 +329,21 @@ const UI = (() => {
       e.preventDefault();
       const f = e.target;
       const roles = [...f.querySelectorAll('.pill-select input:checked')].map((i) => i.value);
+      const first = f.first_name.value.trim(), last = f.last_name.value.trim();
       const profile = {
-        full_name: f.full_name.value.trim(),
+        first_name: first, last_name: last,
+        full_name: `${first} ${last}`.trim(),
         username: f.username.value.trim().replace(/\s+/g, "").toLowerCase(),
         is_group: f.is_group.checked,
         group_name: f.is_group.checked ? f.group_name.value.trim() : "",
         roles, experience: f.experience.value,
         area_code: f.area_code.value.trim(), location: f.location.value.trim(),
-        gear: f.gear.value.trim(), bio: "",
-        contact_ig: f.contact_ig.value.trim(), contact_phone: f.contact_phone.value.trim(),
       };
       try {
         setBusy(f, true);
         await SFC.signUp(f.email.value.trim(), f.password.value, profile);
         m.close();
-        openOnboarding(profile.full_name.split(" ")[0]);
+        openOnboarding(first);
       } catch (err) { toast(err.message, "err"); setBusy(f, false); }
     };
   }
@@ -264,7 +365,7 @@ const UI = (() => {
         <div style="display:flex;flex-direction:column;gap:18px;margin-bottom:22px">
           ${[
             ["🔍", "Browse nearby productions", "Films and shoots are sorted by how close they are to your area code."],
-            ["✋", "Apply for a role", "Found something? Apply for the role you want, or as open-to-anything."],
+            ["✋", "Apply for a role", "Found something? Apply for the role you want, or as someone who's open to anything."],
             ["✅", "Get accepted & connect", "The creator reviews applicants and approves you. Then you swap contacts and shoot."],
           ].map(([i, h, p]) => `
             <div style="display:flex;gap:14px;align-items:flex-start">
@@ -275,6 +376,45 @@ const UI = (() => {
         </div>
         <a href="search.html" class="btn btn-primary btn-block btn-lg">Browse productions →</a>
         <a href="account.html" class="btn btn-block" style="margin-top:10px;color:var(--text-soft)">Finish my profile first</a>
+      </div>`);
+  }
+
+  // ---------- profile viewer ----------
+  // Contact details are only passed in once an applicant is on the roster;
+  // callers omit `showContact` to keep them hidden.
+  function openProfile(p, { showContact = false } = {}) {
+    if (!p) return;
+    const expLabel = (window.SFC_CONFIG.EXPERIENCE.find((e) => e.id === p.experience) || {}).label || p.experience || "";
+    const roles = (p.roles || []).length
+      ? p.roles.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ")
+      : '<span class="muted">No roles listed yet.</span>';
+    const contactRows = [
+      p.contact_email && `<div class="person-row"><span>✉️</span><a href="mailto:${esc(p.contact_email)}">${esc(p.contact_email)}</a></div>`,
+      handle(p.contact_ig) && `<div class="person-row"><span>📷</span><span>${esc(handle(p.contact_ig))}</span></div>`,
+      p.contact_phone && `<div class="person-row"><span>📱</span><span>${esc(p.contact_phone)}</span></div>`,
+    ].filter(Boolean).join("");
+
+    modal(`
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="avatar" style="width:56px;height:56px;font-size:1.2rem">${initials(p.full_name)}</div>
+          <div style="min-width:0">
+            <h2 style="margin:0 0 2px">${esc(p.full_name || "Filmmaker")}</h2>
+            <div class="muted" style="font-size:.9rem">
+              ${esc(handle(p.username))}${p.location ? " · " + esc(p.location) : ""}
+              ${p.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+        ${p.bio ? `<p class="soft" style="margin-top:0;white-space:pre-wrap">${esc(p.bio)}</p>` : ""}
+        <div class="field"><label>Roles</label><div style="display:flex;flex-wrap:wrap;gap:6px">${roles}</div></div>
+        ${expLabel ? `<div class="field"><label>Experience</label><span class="chip">${esc(expLabel)}</span></div>` : ""}
+        ${p.gear ? `<div class="field"><label>Gear</label><p class="soft" style="margin:0">${esc(p.gear)}</p></div>` : ""}
+        ${showContact && contactRows
+          ? `<hr class="divider"><strong style="font-family:'Space Grotesk'">Contact</strong>${contactRows}`
+          : showContact ? '<hr class="divider"><p class="muted">No contact details listed.</p>' : ""}
       </div>`);
   }
 
@@ -310,5 +450,6 @@ const UI = (() => {
   }
 
   return { mountChrome, toast, openAuth, openOnboarding, requireAuth, modal,
-           esc, initials, fmtDateRange, statusChip, prodCard, rolesHTML, observeReveals, el, setBusy };
+           esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
+           openProfile, observeReveals, el, setBusy };
 })();

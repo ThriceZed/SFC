@@ -119,6 +119,30 @@ section { position: relative; }
 .nav-links a.active { color: var(--accent-strong); background: var(--blue-50); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
+/* ---------- Notifications ---------- */
+.notif-btn {
+  position: relative; width: 40px; height: 40px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  display: grid; place-items: center; font-size: 1.05rem; line-height: 1;
+  transition: all .25s var(--ease-spring);
+}
+.notif-btn:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.notif-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--r-pill); background: #e0362b; color: #fff;
+  font-size: .68rem; font-weight: 700; display: grid; place-items: center;
+  border: 2px solid var(--surface); animation: pop .3s var(--ease-spring);
+}
+@keyframes pop { from { transform: scale(0); } }
+.notif-row {
+  display: flex; gap: 12px; align-items: flex-start; padding: 13px 10px;
+  border-radius: var(--r-md); color: var(--text); transition: background .18s;
+}
+.notif-row:hover { background: var(--surface-2); }
+.notif-ico { font-size: 1.1rem; flex-shrink: 0; }
+.notif-text { font-size: .92rem; line-height: 1.45; }
+.notif-when { display: block; font-size: .78rem; color: var(--text-mute); margin-top: 2px; }
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -149,6 +173,8 @@ section { position: relative; }
 .chip.green { background: #e9f9ef; color: #128a4b; border-color: #c9f0d6; }
 .chip.amber { background: #fdf3e2; color: #b06d10; border-color: #f6e2bf; }
 .chip.gray  { background: var(--surface-2); color: var(--text-mute); }
+/* Application statuses come out of the DB lowercase (pending/accepted/declined). */
+.chip.status { text-transform: capitalize; }
 
 .tag {
   display: inline-block; font-size: .78rem; font-weight: 500; padding: 4px 10px;
@@ -216,11 +242,16 @@ section { position: relative; }
 }
 
 /* toggle switch */
-.switch { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; }
+/* label.switch must out-specify `.field label { display: block }` above,
+   or the track collapses on top of its own text. */
+.switch, .field label.switch {
+  display: inline-flex; align-items: center; gap: 12px; cursor: pointer;
+  margin-bottom: 0; font-weight: 500; line-height: 1.4;
+}
 .switch input { display: none; }
 .switch .track {
   width: 48px; height: 28px; border-radius: var(--r-pill); background: var(--border-strong);
-  position: relative; transition: background .25s;
+  position: relative; transition: background .25s; flex-shrink: 0;
 }
 .switch .track::after {
   content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
@@ -349,8 +380,21 @@ section { position: relative; }
 
 /* applicant/roster rows */
 .person-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
-.person-row:last-child { border-bottom: none; }
+/* Flush the outer edges so a list of rows sits evenly inside its card. */
+.person-row:first-child { padding-top: 0; }
+.person-row:last-child { padding-bottom: 0; border-bottom: none; }
+.person-row .chip { flex-shrink: 0; }
+.person-row > div[style*="flex:1"] { min-width: 0; }
 .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-grad); color: #fff; display: grid; place-items: center; font-weight: 700; font-family: 'Space Grotesk'; flex-shrink: 0; }
+button.avatar { transition: transform .2s var(--ease-spring); }
+button.avatar:hover { transform: scale(1.08); }
+
+/* A name that opens a profile: reads as text, behaves as a button. */
+.link-btn {
+  background: none; border: none; padding: 0; font: inherit; font-weight: 700;
+  color: var(--text); cursor: pointer; text-align: left; border-radius: 4px;
+}
+.link-btn:hover { color: var(--accent-strong); text-decoration: underline; }
 
 /* account layout */
 .acct-grid { display: grid; grid-template-columns: 260px 1fr; gap: 30px; align-items: start; }

@@ -37,7 +37,7 @@
   const rolesNeeded = p.open_to_any
     ? `<span class="chip blue">Open to any role</span>`
     : (p.roles_needed || []).map((r) =>
-        `<span class="tag" style="font-size:.9rem;padding:7px 13px">${UI.esc(r.role)} · need ${r.count}</span>`).join(" ");
+        `<span class="tag" style="font-size:.9rem;padding:7px 13px">${UI.esc(r.role)} · Need ${r.count}</span>`).join(" ");
 
   // ---- apply / owner panel ----
   let sidePanel;
@@ -97,10 +97,10 @@
         <h3 style="margin-top:26px">Posted by</h3>
         <div class="card card-pad" style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:52px;height:52px">${UI.initials(creator?.full_name)}</div>
-          <div style="flex:1">
-            <strong>${UI.esc(creator?.full_name || "Unknown")}</strong>
+          <div style="flex:1;min-width:0">
+            <button class="link-btn" id="creatorProfile">${UI.esc(creator?.full_name || "Unknown")}</button>
             ${creator?.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
-            <div class="muted" style="font-size:.88rem">@${UI.esc(creator?.username || "")} · ${UI.esc(creator?.location || "")}</div>
+            <div class="muted" style="font-size:.88rem">${UI.esc(UI.handle(creator?.username))}${creator?.location ? " · " + UI.esc(creator.location) : ""}</div>
           </div>
         </div>
       </div>
@@ -120,12 +120,18 @@
 
   if (isOwner) wireOwnerActions();
 
+  // Anyone can look at who posted the production.
+  const creatorBtn = document.getElementById("creatorProfile");
+  if (creatorBtn) creatorBtn.onclick = () =>
+    UI.openProfile(creator, { showContact: myApp?.status === "accepted" || isOwner });
+
   // ---------- helpers ----------
   function contactBlock(c) {
     if (!c) return "";
+    const ig = UI.handle(c.contact_ig);
     const rows = [
       c.contact_email && `<div class="person-row"><span>✉️</span><a href="mailto:${UI.esc(c.contact_email)}">${UI.esc(c.contact_email)}</a></div>`,
-      c.contact_ig && `<div class="person-row"><span>📷</span><span>${UI.esc(c.contact_ig)}</span></div>`,
+      ig && `<div class="person-row"><span>📷</span><span>${UI.esc(ig)}</span></div>`,
       c.contact_phone && `<div class="person-row"><span>📱</span><span>${UI.esc(c.contact_phone)}</span></div>`,
     ].filter(Boolean).join("");
     return `<hr class="divider"><strong style="font-family:'Space Grotesk'">Reach the creator</strong>${rows || '<p class="muted">No contact info listed.</p>'}`;
@@ -165,18 +171,22 @@
 
     const row = (a) => {
       const c = byId[a.applicant_id] || {};
+      const exp = (window.SFC_CONFIG.EXPERIENCE.find((e) => e.id === c.experience) || {}).label || "";
+      const contacts = [c.contact_email, UI.handle(c.contact_ig), c.contact_phone]
+        .filter(Boolean).map(UI.esc).join(" · ");
       const actions = a.status === "pending"
         ? `<div style="display:flex;gap:6px">
              <button class="btn btn-sm btn-primary" data-accept="${a.id}">Accept</button>
              <button class="btn btn-sm btn-ghost" data-decline="${a.id}">Pass</button></div>`
-        : `<span class="chip ${a.status === "accepted" ? "green" : "gray"}">${a.status}</span>`;
+        : `<span class="chip status ${a.status === "accepted" ? "green" : "gray"}">${a.status}</span>`;
       return `<div class="person-row">
-        <div class="avatar">${UI.initials(c.full_name)}</div>
+        <button class="avatar" data-profile="${a.applicant_id}" title="View profile"
+                style="border:none;cursor:pointer;font-size:.95rem">${UI.initials(c.full_name)}</button>
         <div style="flex:1;min-width:0">
-          <strong>${UI.esc(c.full_name || "Applicant")}</strong>
-          <div class="muted" style="font-size:.82rem">${UI.esc(a.role)} · ${UI.esc(c.experience || "")}</div>
+          <button class="link-btn" data-profile="${a.applicant_id}">${UI.esc(c.full_name || "Applicant")}</button>
+          <div class="muted" style="font-size:.82rem">${UI.esc(a.role)}${exp ? " · " + UI.esc(exp) : ""}</div>
           ${a.message ? `<div class="soft" style="font-size:.85rem;margin-top:4px">"${UI.esc(a.message)}"</div>` : ""}
-          ${a.status === "accepted" ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${[c.contact_email, c.contact_ig, c.contact_phone].filter(Boolean).map(UI.esc).join(" · ")}</div>` : ""}
+          ${a.status === "accepted" && contacts ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${contacts}</div>` : ""}
         </div>
         ${actions}
       </div>`;
@@ -191,13 +201,69 @@
             : '<p class="muted" style="padding:14px 0">No applications yet. Share your production!</p>'}
         </div>
         <hr class="divider">
-        <a class="btn btn-ghost btn-block" href="create.html">+ Post another</a>
+        <button class="btn btn-soft btn-block" id="addCrewBtn">+ Add someone you know</button>
+        <a class="btn btn-ghost btn-block" href="create.html" style="margin-top:8px">+ Post another</a>
       </div>`;
   }
 
   function wireOwnerActions() {
     root.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => decide(b.dataset.accept, "accepted"));
     root.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => decide(b.dataset.decline, "declined"));
+    // Creator can inspect anyone who applied; contacts only once accepted.
+    root.querySelectorAll("[data-profile]").forEach((b) => b.onclick = async () => {
+      const prof = await SFC.getProfile(b.dataset.profile);
+      const a = apps.find((x) => x.applicant_id === b.dataset.profile);
+      UI.openProfile(prof, { showContact: a?.status === "accepted" });
+    });
+    const addBtn = document.getElementById("addCrewBtn");
+    if (addBtn) addBtn.onclick = openAddCrewModal;
+  }
+
+  // ---- add a known collaborator straight to the roster ----
+  function openAddCrewModal() {
+    const roleOpts = (p.open_to_any ? window.SFC_CONFIG.ROLES : (p.roles_needed || []).map((r) => r.role));
+    const m = UI.modal(`
+      <div class="modal-head"><h2>Add someone you know</h2>
+        <p class="muted">Search by username or name. They go straight onto the roster, no application needed.</p></div>
+      <div class="modal-body">
+        <div class="field"><label>Find a filmmaker</label>
+          <input class="input" id="crewSearch" placeholder="username or name" autocomplete="off"></div>
+        <div class="field"><label>Role</label>
+          <select class="select" id="crewRole">${roleOpts.map((r) => `<option>${UI.esc(r)}</option>`).join("")}</select></div>
+        <div id="crewResults"></div>
+      </div>`);
+
+    const results = m.q("#crewResults");
+    const onRoster = new Set(apps.map((a) => a.applicant_id));
+    let t;
+    m.q("#crewSearch").oninput = (e) => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        const list = await SFC.searchProfiles(e.target.value);
+        const pickable = list.filter((x) => x.id !== p.creator_id);
+        results.innerHTML = pickable.length
+          ? pickable.map((x) => `
+              <div class="person-row">
+                <div class="avatar">${UI.initials(x.full_name)}</div>
+                <div style="flex:1;min-width:0">
+                  <strong>${UI.esc(x.full_name)}</strong>
+                  <div class="muted" style="font-size:.82rem">${UI.esc(UI.handle(x.username))}${x.location ? " · " + UI.esc(x.location) : ""}</div>
+                </div>
+                ${onRoster.has(x.id)
+                  ? '<span class="chip gray">Already on</span>'
+                  : `<button class="btn btn-sm btn-primary" data-add="${x.id}">Add</button>`}
+              </div>`).join("")
+          : (e.target.value.trim() ? '<p class="muted" style="padding:10px 0">Nobody found.</p>' : "");
+        results.querySelectorAll("[data-add]").forEach((b) => b.onclick = async () => {
+          try {
+            b.disabled = true;
+            await SFC.addCrew(p.id, b.dataset.add, m.q("#crewRole").value);
+            m.close(); UI.toast("Added to your roster", "ok");
+            setTimeout(() => location.reload(), 600);
+          } catch (err) { UI.toast(err.message, "err"); b.disabled = false; }
+        });
+      }, 220);
+    };
   }
   async function decide(appId, status) {
     try {

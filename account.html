@@ -39,7 +39,7 @@
       <div class="avatar" style="width:64px;height:64px;font-size:1.4rem">${UI.initials(user.full_name)}</div>
       <div style="flex:1">
         <h1 style="margin:0">${UI.esc(user.full_name)}</h1>
-        <p style="margin:0" class="muted">@${UI.esc(user.username)} · ${UI.esc(user.location || "")}
+        <p style="margin:0" class="muted">${UI.esc(UI.handle(user.username))}${user.location ? " · " + UI.esc(user.location) : ""}
           ${user.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}</p>
       </div>
       <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
@@ -68,21 +68,36 @@
   function renderProfile() {
     const expOpts = window.SFC_CONFIG.EXPERIENCE.map((e) =>
       `<option value="${e.id}" ${user.experience === e.id ? "selected" : ""}>${e.label}</option>`).join("");
+    // Fall back to splitting full_name for accounts made before the name split.
+    const first = user.first_name ?? (user.full_name || "").split(" ")[0] ?? "";
+    const last = user.last_name ?? (user.full_name || "").split(" ").slice(1).join(" ");
+
     panel.innerHTML = `<form id="pf" class="card card-pad" style="padding:28px">
       <h3 style="margin-bottom:18px">Edit profile</h3>
       <div class="row2">
-        <div class="field"><label>Full name</label><input class="input" name="full_name" value="${UI.esc(user.full_name)}"></div>
-        <div class="field"><label>Username</label><input class="input" name="username" value="${UI.esc(user.username)}"></div>
+        <div class="field"><label>First name</label><input class="input" name="first_name" value="${UI.esc(first)}"></div>
+        <div class="field"><label>Last name</label><input class="input" name="last_name" value="${UI.esc(last)}"></div>
       </div>
-      ${user.is_group ? `<div class="field"><label>Group name</label><input class="input" name="group_name" value="${UI.esc(user.group_name || "")}"></div>` : ""}
+      <div class="field">
+        <label>Username</label>
+        <input class="input" value="${UI.esc(user.username)}" disabled style="opacity:.6;cursor:not-allowed">
+        <div class="hint">Usernames can't be changed for now.</div>
+      </div>
+      <div class="field">
+        <label class="switch"><input type="checkbox" name="is_group" ${user.is_group ? "checked" : ""}>
+          <span class="track"></span><span>This account is a group / club</span></label>
+      </div>
+      <div class="field" id="groupNameField" style="display:${user.is_group ? "" : "none"}">
+        <label>Group name</label><input class="input" name="group_name" value="${UI.esc(user.group_name || "")}" placeholder="Lens Collective">
+      </div>
       <div class="field"><label>Bio</label><textarea class="textarea" name="bio" placeholder="Tell people about your style and what you're looking for…">${UI.esc(user.bio || "")}</textarea></div>
       <div class="field"><label>Roles you do</label><div class="pill-select">${UI.rolesHTML("pfRoles", user.roles || [])}</div></div>
       <div class="row2">
         <div class="field"><label>Experience</label><select class="select" name="experience">${expOpts}</select></div>
-        <div class="field"><label>Area / zip code</label><input class="input" name="area_code" value="${UI.esc(user.area_code || "")}"></div>
+        <div class="field"><label>Area / zip code</label><input class="input" value="${UI.esc(user.area_code || "")}" name="area_code"></div>
       </div>
       <div class="field"><label>Location</label><input class="input" name="location" value="${UI.esc(user.location || "")}"></div>
-      <div class="field"><label>Gear you own</label><input class="input" name="gear" value="${UI.esc(user.gear || "")}"></div>
+      <div class="field"><label>Gear</label><input class="input" name="gear" value="${UI.esc(user.gear || "")}" placeholder="Camera, lenses, lights…"></div>
       <hr class="divider">
       <h4 style="margin-bottom:14px">Contact <span class="muted" style="font-weight:400;font-size:.85rem">(shared only after you're accepted)</span></h4>
       <div class="row2">
@@ -93,18 +108,28 @@
       <button class="btn btn-primary btn-lg" type="submit">Save changes</button>
     </form>`;
 
-    document.getElementById("pf").onsubmit = async (e) => {
+    // Reveal the group name field the moment the account is switched to a group.
+    const pf = document.getElementById("pf");
+    pf.is_group.onchange = (e) => {
+      document.getElementById("groupNameField").style.display = e.target.checked ? "" : "none";
+    };
+
+    pf.onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
       const roles = [...f.querySelectorAll(".pill-select input:checked")].map((i) => i.value);
+      const fn = f.first_name.value.trim(), ln = f.last_name.value.trim();
       const patch = {
-        full_name: f.full_name.value.trim(), username: f.username.value.trim(),
+        first_name: fn, last_name: ln, full_name: `${fn} ${ln}`.trim(),
         bio: f.bio.value.trim(), roles, experience: f.experience.value,
         area_code: f.area_code.value.trim(), location: f.location.value.trim(),
         gear: f.gear.value.trim(), contact_email: f.contact_email.value.trim(),
-        contact_ig: f.contact_ig.value.trim(), contact_phone: f.contact_phone.value.trim(),
+        // Store handles bare; the UI adds the @ when rendering.
+        contact_ig: f.contact_ig.value.trim().replace(/^@+/, ""),
+        contact_phone: f.contact_phone.value.trim(),
+        is_group: f.is_group.checked,
+        group_name: f.is_group.checked ? f.group_name.value.trim() : "",
       };
-      if (f.group_name) patch.group_name = f.group_name.value.trim();
       try {
         UI.setBusy(f, true);
         Object.assign(user, await SFC.updateProfile(patch));
@@ -152,7 +177,7 @@
           <strong style="font-size:1.1rem">${UI.esc(prod.title)}</strong>
           <div class="muted" style="font-size:.88rem;margin-top:2px">Applied as ${UI.esc(a.role)} · ${UI.fmtDateRange(prod.start_date, prod.end_date)}</div>
         </div>
-        <span class="chip ${cls}">${a.status}</span></a>`;
+        <span class="chip status ${cls}">${a.status}</span></a>`;
     }));
     panel.innerHTML = `<div style="display:flex;flex-direction:column;gap:14px">${rows.join("")}</div>`;
   }
