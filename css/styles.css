@@ -126,6 +126,10 @@ section { position: relative; }
 .nav-links a:hover { background: var(--surface-2); color: var(--text); }
 .nav-links a.active { color: var(--accent-strong); background: var(--blue-50); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* Notification bell is a fixed 40px circle; match every other nav-right
+   control to it so the row reads as one consistent height, not a mix of
+   button padding and an icon button's fixed size. */
+.nav-right .nav-pill { height: 40px; padding-top: 0; padding-bottom: 0; }
 
 /* ---------- Notifications ---------- */
 .notif-btn {
@@ -207,6 +211,13 @@ section { position: relative; }
   background: #131c30; color: #fff;
   box-shadow: 0 3px 10px rgba(19,28,48,.28);
 }
+/* SFC+ membership: a checkmark next to the name instead of a text pill. */
+.verified-check {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%; padding: 3px;
+  background: var(--accent-grad); box-shadow: 0 2px 6px rgba(59,107,245,.4);
+  vertical-align: middle; flex-shrink: 0;
+}
 
 /* ---------- Gear picker ---------- */
 .gear-picker {
@@ -275,6 +286,16 @@ section { position: relative; }
   padding: 12px 14px; transition: border-color .2s, box-shadow .2s;
 }
 .textarea { resize: vertical; min-height: 96px; }
+/* Reset the native <select> look (differs per browser/OS) so it reads as
+   the same curved-box control as every other field, with one consistent
+   chevron instead of whatever the platform draws. */
+.select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  cursor: pointer; padding-right: 40px;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2347526b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; background-size: 15px;
+}
+.select::-ms-expand { display: none; }
 .input:focus, .textarea:focus, .select:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
@@ -442,6 +463,19 @@ section { position: relative; }
   min-width: 76px; flex-shrink: 0; font-size: .78rem; font-weight: 600;
   color: var(--text-mute); text-transform: uppercase; letter-spacing: .04em;
 }
+/* A note the creator left when adding crew directly: no quote marks (it's
+   not the crew member's own words), and a small chip instead if they were
+   also given editing permission. */
+.crew-note { font-style: italic; }
+.crew-note::before { content: "• "; }
+
+/* Signed-in home / SFC+ hero: same blue-accent treatment as the marketing
+   hero, sized down for a page that's mostly two buttons. */
+.mini-hero { padding: 90px 0 70px; text-align: center; position: relative; overflow: hidden; }
+.mini-hero h1 { font-size: clamp(2.2rem, 5vw, 3.2rem); animation: fadeUp .6s .05s var(--ease-out) both; }
+.mini-hero p { font-size: 1.1rem; color: var(--text-soft); max-width: 46ch; margin: 14px auto 30px; animation: fadeUp .6s .12s var(--ease-out) both; }
+.mini-hero .cta-row { justify-content: center; animation: fadeUp .6s .2s var(--ease-out) both; }
+
 /* Moderating someone else's production: visually distinct from owning it. */
 .mod-card { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 .mod-card::before {

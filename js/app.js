@@ -23,27 +23,48 @@ const UI = (() => {
     aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
     <path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
 
-  // Badges are granted server-side only (see supabase/migration_002.sql).
-  // Unknown values are ignored rather than rendered raw.
+  const CHECK_SVG = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#fff"
+    stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+  // Badges are granted server-side only (see supabase/migration_002.sql and
+  // migration_003.sql). Unknown values are ignored rather than rendered raw.
+  // SFC+ renders as the checkmark (verifiedHTML) instead of a text pill, so
+  // it's excluded here to avoid saying the same thing twice next to a name.
   function badgeHTML(profile) {
     const defs = window.SFC_CONFIG.BADGES || {};
     return (profile?.badges || [])
-      .filter((b) => defs[b])
+      .filter((b) => defs[b] && b !== "SFC+")
       .map((b) => `<span class="badge ${defs[b].cls}" title="${esc(defs[b].title)}">${esc(b)}</span>`)
       .join("");
   }
+
+  // The blue checkmark: SFC+ membership, shown next to a name instead of a
+  // text pill for that one badge.
+  function verifiedHTML(profile) {
+    if (!(profile?.badges || []).includes("SFC+")) return "";
+    const title = window.SFC_CONFIG.BADGES?.["SFC+"]?.title || "SFC+ member";
+    return `<span class="verified-check" title="${esc(title)}">${CHECK_SVG}</span>`;
+  }
+
+  // What to render next to any name, anywhere: checkmark first, then badges.
+  const nameBadgesHTML = (profile) => verifiedHTML(profile) + badgeHTML(profile);
 
   // Everything a profile lists, presets and free text together.
   const gearOf = (p) => [...(p?.gear_list || []), ...(p?.gear ? [p.gear] : [])];
 
   // Contact rows carry a text label: an "@handle" on its own doesn't say
   // which network it belongs to.
-  function contactRowsHTML(p) {
+  //
+  // Instagram is always included when present: it's a public handle people
+  // already put in bios, not private contact info. Email and phone are
+  // private and only included when showPrivate is true, i.e. the viewer is
+  // actually on that shoot (accepted) or is the owner/staff.
+  function contactRowsHTML(p, { showPrivate = false } = {}) {
     const ig = handle(p?.contact_ig);
     return [
-      p?.contact_email && ["Email", `<a href="mailto:${esc(p.contact_email)}">${esc(p.contact_email)}</a>`],
       ig && ["Instagram", esc(ig)],
-      p?.contact_phone && ["Phone", esc(p.contact_phone)],
+      showPrivate && p?.contact_email && ["Email", `<a href="mailto:${esc(p.contact_email)}">${esc(p.contact_email)}</a>`],
+      showPrivate && p?.contact_phone && ["Phone", esc(p.contact_phone)],
     ].filter(Boolean).map(([k, v]) =>
       `<div class="person-row"><span class="contact-key">${k}</span><span>${v}</span></div>`).join("");
   }
@@ -78,6 +99,8 @@ const UI = (() => {
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 
   // ---------- chrome ----------
+  // "home" has no fixed href: index.html is the logged-out pitch page,
+  // home.html is the signed-in dashboard. Resolved per-render in mountChrome.
   const PAGES = [
     { id: "home", href: "index.html", label: "Home", icon: "🎬" },
     { id: "search", href: "search.html", label: "Search", icon: "🔍" },
@@ -88,12 +111,12 @@ const UI = (() => {
   async function mountChrome() {
     const active = document.body.dataset.page;
     const user = await SFC.getCurrentUser();
+    const homeHref = user ? "home.html" : "index.html";
 
-    // Signed-in users have no home page: it's a marketing page for visitors,
-    // so drop it from both navs and point the brand at Search instead.
-    const navPages = PAGES.filter((p) => p.id !== "account" && !(user && p.id === "home"));
-    if (isStaff(user)) navPages.push({ id: "moderate", href: "moderate.html", label: "Moderate" });
-    const homeHref = user ? "search.html" : "index.html";
+    const allPages = PAGES.map((p) => p.id === "home" ? { ...p, href: homeHref } : p);
+    if (isStaff(user)) allPages.push({ id: "moderate", href: "moderate.html", label: "Moderate" });
+    // Top bar skips Account (it's the profile pill on the right instead).
+    const navPages = allPages.filter((p) => p.id !== "account");
 
     const nav = el("nav", "nav");
     nav.innerHTML = `
@@ -109,16 +132,19 @@ const UI = (() => {
         <div class="nav-right">
           ${user
             ? `<button class="notif-btn" data-notif title="Notifications" aria-label="Notifications">${BELL_SVG}<span class="notif-badge" hidden>0</span></button>
-               <a class="btn btn-ghost btn-sm" href="account.html">${esc(user.first_name || user.full_name?.split(" ")[0] || "Account")}</a>`
-            : `<button class="btn btn-primary btn-sm" data-auth="login">Sign up</button>`}
+               <a class="btn btn-ghost btn-sm nav-pill" href="account.html">${esc(user.first_name || user.full_name?.split(" ")[0] || "Account")}</a>`
+            : `<button class="btn btn-ghost btn-sm nav-pill" data-auth="login">Log in</button>
+               <button class="btn btn-primary btn-sm nav-pill" data-auth="signup">Sign up</button>`}
         </div>
       </div>`;
     document.body.prepend(nav);
-    const authBtn = nav.querySelector("[data-auth]");
-    if (authBtn) authBtn.onclick = () => openAuth("signup");
+    nav.querySelectorAll("[data-auth]").forEach((b) =>
+      b.onclick = () => openAuth(b.dataset.auth));
 
+    // Bottom bar keeps Account but drops Moderate: only four slots fit well
+    // on a phone, and staff still reach Moderate from the top nav.
     const mnav = el("nav", "mobile-nav");
-    mnav.innerHTML = (user ? PAGES.filter((p) => p.id !== "home") : PAGES).map((p) =>
+    mnav.innerHTML = allPages.filter((p) => p.id !== "moderate").map((p) =>
       `<a href="${p.href}" class="${p.id === active ? "active" : ""}"><span class="mi">${p.icon}</span>${p.label}</a>`).join("");
     document.body.appendChild(mnav);
 
@@ -143,6 +169,7 @@ const UI = (() => {
             <div style="display:flex;flex-direction:column;gap:8px">
               <a href="search.html" class="soft">Browse productions</a>
               <a href="create.html" class="soft">Post a production</a>
+              <a href="sfc-plus.html" class="soft">SFC+</a>
               <a href="index.html#how" class="soft">How it works</a>
             </div>
           </div>
@@ -153,7 +180,7 @@ const UI = (() => {
         </div>
         <div class="credit">
           <span>© ${new Date().getFullYear()} Student Film Connection</span>
-          <span>Website by <a href="#" target="_blank" rel="noopener">ThriceZed</a></span>
+          <span>Website by <a href="https://thricezed.com" target="_blank" rel="noopener">ThriceZed</a></span>
         </div>
       </div>`;
     document.body.appendChild(f);
@@ -204,19 +231,34 @@ const UI = (() => {
     return items;
   }
 
+  const NOTIF_POLL_MS = 45000;
+
   async function initNotifications(user, nav) {
     const btn = nav.querySelector("[data-notif]");
     if (!btn) return;
     const badge = btn.querySelector(".notif-badge");
     let items = [];
-    try { items = await loadNotifications(user); } catch { return; }
 
-    const seen = localStorage.getItem(SEEN_KEY(user.id));
-    const unread = items.filter((i) => !seen || new Date(i.when) > new Date(seen));
-    if (unread.length) {
-      badge.textContent = unread.length > 9 ? "9+" : unread.length;
-      badge.hidden = false;
-    }
+    const refreshBadge = async () => {
+      try { items = await loadNotifications(user); } catch { return; }
+      const seen = localStorage.getItem(SEEN_KEY(user.id));
+      const unread = items.filter((i) => !seen || new Date(i.when) > new Date(seen));
+      if (unread.length) {
+        badge.textContent = unread.length > 9 ? "9+" : unread.length;
+        badge.hidden = false;
+      } else {
+        badge.hidden = true;
+      }
+    };
+    await refreshBadge();
+
+    // Poll for new applications/verdicts without a manual reload. Paused
+    // while the tab isn't visible so a backgrounded tab doesn't keep
+    // querying, and cleared if the page navigates away.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") refreshBadge();
+    }, NOTIF_POLL_MS);
+    window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
 
     btn.onclick = () => {
       localStorage.setItem(SEEN_KEY(user.id), new Date().toISOString());
@@ -461,7 +503,10 @@ const UI = (() => {
       e.preventDefault();
       const f = e.target;
       const roles = [...f.querySelectorAll('.pill-select input:checked')].map((i) => i.value);
+      if (!roles.length) return toast("Pick at least one role.", "err");
       const first = f.first_name.value.trim(), last = f.last_name.value.trim();
+      if (f.is_group.checked && !f.group_name.value.trim())
+        return toast("Enter your group's name.", "err");
       const profile = {
         first_name: first, last_name: last,
         full_name: `${first} ${last}`.trim(),
@@ -512,24 +557,28 @@ const UI = (() => {
   }
 
   // ---------- profile viewer ----------
-  // Contact details are only passed in once an applicant is on the roster;
-  // callers omit `showContact` to keep them hidden.
-  function openProfile(p, { showContact = false } = {}) {
+  // showContact governs private info (email/phone); Instagram shows
+  // regardless. Omit showContact to keep private fields hidden.
+  async function openProfile(p, { showContact = false } = {}) {
     if (!p) return;
     const expLabel = (window.SFC_CONFIG.EXPERIENCE.find((e) => e.id === p.experience) || {}).label || p.experience || "";
     const roles = (p.roles || []).length
       ? p.roles.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ")
       : '<span class="muted">No roles listed yet.</span>';
-    const contactRows = contactRowsHTML(p);
-
+    const contactRows = contactRowsHTML(p, { showPrivate: showContact });
     const gear = gearOf(p);
-    modal(`
+
+    const viewer = await SFC.getCurrentUser();
+    const isSelf = viewer && viewer.id === p.id;
+    const rel = (viewer && !isSelf) ? await relationshipWith(p.id) : null;
+
+    const m = modal(`
       <div class="modal-head">
         <div style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:56px;height:56px;font-size:1.2rem">${initials(p.full_name)}</div>
           <div style="min-width:0">
             <h2 style="margin:0 0 2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${esc(p.full_name || "Filmmaker")}${badgeHTML(p)}</h2>
+              ${esc(p.full_name || "Filmmaker")}${nameBadgesHTML(p)}</h2>
             <div class="muted" style="font-size:.9rem">
               ${esc(handle(p.username))}${p.location ? " · " + esc(p.location) : ""}
               ${p.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
@@ -538,15 +587,65 @@ const UI = (() => {
         </div>
       </div>
       <div class="modal-body">
+        ${rel ? `<div id="relBtns" style="display:flex;gap:8px;margin-bottom:18px">${relationshipButtonsHTML(rel)}</div>` : ""}
         ${p.bio ? `<p class="soft" style="margin-top:0;white-space:pre-wrap">${esc(p.bio)}</p>` : ""}
         <div class="field"><label>Roles</label><div style="display:flex;flex-wrap:wrap;gap:6px">${roles}</div></div>
         ${expLabel ? `<div class="field"><label>Experience</label><span class="chip">${esc(expLabel)}</span></div>` : ""}
         ${gear.length ? `<div class="field"><label>Gear</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px">${gear.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</div></div>` : ""}
-        ${showContact && contactRows
+        ${contactRows
           ? `<hr class="divider"><strong style="font-family:'Space Grotesk'">Contact</strong>${contactRows}`
           : showContact ? '<hr class="divider"><p class="muted">No contact details listed.</p>' : ""}
       </div>`);
+
+    if (rel) wireRelationshipButtons(m, p, rel);
+  }
+
+  // ---------- follow / friend ----------
+  // Relative-to-viewer status. Errors (not signed in, RLS refusal, demo mode
+  // without the tables yet) collapse to "no relationship" rather than break
+  // the profile modal over a non-essential feature.
+  async function relationshipWith(otherId) {
+    try { return await SFC.getRelationship(otherId); }
+    catch { return { following: false, friendStatus: "none" }; }
+  }
+
+  function relationshipButtonsHTML(rel) {
+    const followBtn = rel.following
+      ? `<button class="btn btn-ghost btn-sm" data-unfollow>Following</button>`
+      : `<button class="btn btn-soft btn-sm" data-follow>Follow</button>`;
+    const friendBtn = {
+      none: `<button class="btn btn-ghost btn-sm" data-friend-add>+ Add friend</button>`,
+      pending_out: `<button class="btn btn-ghost btn-sm" data-friend-cancel>Request sent</button>`,
+      pending_in: `<span style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" data-friend-accept>Accept request</button>
+          <button class="btn btn-ghost btn-sm" data-friend-decline>Decline</button></span>`,
+      friends: `<button class="btn btn-soft btn-sm" data-friend-remove>✓ Friends</button>`,
+    }[rel.friendStatus];
+    return followBtn + friendBtn;
+  }
+
+  function wireRelationshipButtons(m, p, rel) {
+    const refresh = async () => {
+      const next = await relationshipWith(p.id);
+      const box = m.q("#relBtns");
+      if (box) { box.innerHTML = relationshipButtonsHTML(next); wireRelationshipButtons(m, p, next); }
+    };
+    const bind = (sel, fn, okMsg) => {
+      const b = m.q(sel);
+      if (!b) return;
+      b.onclick = async () => {
+        try { b.disabled = true; await fn(); if (okMsg) toast(okMsg, "ok"); await refresh(); }
+        catch (err) { toast(err.message, "err"); b.disabled = false; }
+      };
+    };
+    bind("[data-follow]", () => SFC.follow(p.id));
+    bind("[data-unfollow]", () => SFC.unfollow(p.id));
+    bind("[data-friend-add]", () => SFC.sendFriendRequest(p.id), "Friend request sent");
+    bind("[data-friend-cancel]", () => SFC.removeFriendship(p.id));
+    bind("[data-friend-accept]", () => SFC.acceptFriendRequest(p.id), "You're now friends");
+    bind("[data-friend-decline]", () => SFC.removeFriendship(p.id));
+    bind("[data-friend-remove]", () => SFC.removeFriendship(p.id), "Friend removed");
   }
 
   // ---------- staff ----------
@@ -555,8 +654,11 @@ const UI = (() => {
   const isStaff = (user) => !!user && (user.badges || []).includes("Staff");
 
   // ---------- edit / delete a production ----------
-  // Used by the creator and by staff moderating someone else's production.
-  function openEditProduction(prod, { onSaved, onDeleted } = {}) {
+  // Used by the creator, by staff moderating someone else's production, and
+  // by crew a creator has given editing permission (canDelete: false for
+  // that last case: the "crew editor updates production" RLS policy only
+  // grants update, never delete, and the button is hidden to match).
+  function openEditProduction(prod, { onSaved, onDeleted, canDelete = true } = {}) {
     const statusOpts = [
       ["recruiting", "Recruiting"], ["full", "Cast full"], ["wrapped", "Wrapped"],
     ].map(([v, l]) => `<option value="${v}" ${prod.status === v ? "selected" : ""}>${l}</option>`).join("");
@@ -598,9 +700,9 @@ const UI = (() => {
             <input class="input" name="gear_provided" value="${esc(prod.gear_provided || "")}"></div>
           <button class="btn btn-primary btn-block btn-lg" type="submit">Save changes</button>
         </form>
-        <hr class="divider">
+        ${canDelete ? `<hr class="divider">
         <button class="btn btn-danger btn-block" id="deleteProdBtn">Delete this production</button>
-        <p class="hint center" style="margin-top:8px">Deleting also removes every application to it. This can't be undone.</p>
+        <p class="hint center" style="margin-top:8px">Deleting also removes every application to it. This can't be undone.</p>` : ""}
       </div>`, { wide: true });
 
     const end = m.q("#eEnd"), tbd = m.q("#eTBD");
@@ -631,7 +733,7 @@ const UI = (() => {
       } catch (err) { toast(err.message, "err"); setBusy(f, false); }
     };
 
-    m.q("#deleteProdBtn").onclick = () => confirmDelete(prod, () => { m.close(); onDeleted?.(); });
+    if (canDelete) m.q("#deleteProdBtn").onclick = () => confirmDelete(prod, () => { m.close(); onDeleted?.(); });
   }
 
   // Typed confirmation: deleting cascades to every application.
@@ -692,7 +794,7 @@ const UI = (() => {
 
   return { mountChrome, toast, openAuth, openOnboarding, requireAuth, modal,
            esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
-           gearHTML, readGear, wireGear, gearOf, badgeHTML, contactRowsHTML,
-           isStaff, openEditProduction, confirmDelete, openProfile,
+           gearHTML, readGear, wireGear, gearOf, badgeHTML, verifiedHTML, nameBadgesHTML,
+           contactRowsHTML, isStaff, openEditProduction, confirmDelete, openProfile,
            observeReveals, el, setBusy };
 })();

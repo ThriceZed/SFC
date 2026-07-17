@@ -54,11 +54,22 @@
       declined: ['gray', "Not this time", "The creator went another direction for this one."],
     };
     const [cls, title, note] = statusMap[myApp.status];
+    // The creator can hand editing permission to a crew member they added
+    // directly (see the "Give them editing permissions" switch below); that
+    // shows up here as a second card, not a full ownerPanel: they can change
+    // the production's details, not manage the roster or delete it.
+    const editorCard = (myApp.status === "accepted" && myApp.can_edit) ? `
+      <div class="card card-pad" style="margin-top:14px">
+        <span class="chip blue">Editing permission</span>
+        <p class="soft" style="font-size:.88rem;margin:10px 0 14px">
+          The creator gave you editing access to this production's details.</p>
+        <button class="btn btn-ghost btn-block" id="crewEditBtn">Edit production</button>
+      </div>` : "";
     sidePanel = `<div class="card card-pad">
       <span class="chip ${cls}">${title}</span>
       <p class="soft" style="margin:14px 0 0">${note}</p>
       ${myApp.status === "accepted" ? contactBlock(creator) : ""}
-    </div>`;
+    </div>${editorCard}`;
   } else {
     sidePanel = `<div class="card card-pad">
       <h3 style="margin-bottom:6px">Want in?</h3>
@@ -102,7 +113,9 @@
         <div class="card card-pad" style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:52px;height:52px">${UI.initials(creator?.full_name)}</div>
           <div style="flex:1;min-width:0">
-            <button class="link-btn" id="creatorProfile">${UI.esc(creator?.full_name || "Unknown")}</button>
+            <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <button class="link-btn" id="creatorProfile">${UI.esc(creator?.full_name || "Unknown")}</button>${UI.nameBadgesHTML(creator)}
+            </span>
             ${creator?.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
             <div class="muted" style="font-size:.88rem">${UI.esc(UI.handle(creator?.username))}${creator?.location ? " · " + UI.esc(creator.location) : ""}</div>
           </div>
@@ -124,15 +137,20 @@
 
   if (isOwner || staff) wireOwnerActions();
 
+  const crewEditBtn = document.getElementById("crewEditBtn");
+  if (crewEditBtn) crewEditBtn.onclick = () => UI.openEditProduction(p, { canDelete: false });
+
   // Anyone can look at who posted the production.
   const creatorBtn = document.getElementById("creatorProfile");
   if (creatorBtn) creatorBtn.onclick = () =>
-    UI.openProfile(creator, { showContact: myApp?.status === "accepted" || isOwner });
+    UI.openProfile(creator, { showContact: myApp?.status === "accepted" || isOwner || staff });
 
   // ---------- helpers ----------
+  // Only rendered once the viewer is actually on this shoot (accepted), so
+  // private contact fields are appropriate here alongside Instagram.
   function contactBlock(c) {
     if (!c) return "";
-    const rows = UI.contactRowsHTML(c);
+    const rows = UI.contactRowsHTML(c, { showPrivate: true });
     return `<hr class="divider"><strong style="font-family:'Space Grotesk'">Reach the creator</strong>${rows || '<p class="muted">No contact info listed.</p>'}`;
   }
 
@@ -171,21 +189,35 @@
     const row = (a) => {
       const c = byId[a.applicant_id] || {};
       const exp = (window.SFC_CONFIG.EXPERIENCE.find((e) => e.id === c.experience) || {}).label || "";
-      const contacts = [c.contact_email, UI.handle(c.contact_ig), c.contact_phone]
-        .filter(Boolean).map(UI.esc).join(" · ");
+      // IG always shows once you can see the roster row at all; email/phone
+      // only once they're actually accepted onto the shoot.
+      const ig = UI.handle(c.contact_ig);
+      const contacts = [
+        ig,
+        a.status === "accepted" && c.contact_email,
+        a.status === "accepted" && c.contact_phone,
+      ].filter(Boolean).map(UI.esc).join(" · ");
       const actions = a.status === "pending"
         ? `<div style="display:flex;gap:6px">
              <button class="btn btn-sm btn-primary" data-accept="${a.id}">Accept</button>
              <button class="btn btn-sm btn-ghost" data-decline="${a.id}">Pass</button></div>`
         : `<span class="chip status ${a.status === "accepted" ? "green" : "gray"}">${a.status}</span>`;
+      // A note the creator left when adding them directly reads as a note,
+      // not a quoted message from the crew member (they didn't write it).
+      const noteHTML = !a.message ? "" : a.added_by_creator
+        ? `<div class="crew-note muted" style="font-size:.85rem;margin-top:4px">${UI.esc(a.message)}</div>`
+        : `<div class="soft" style="font-size:.85rem;margin-top:4px">"${UI.esc(a.message)}"</div>`;
       return `<div class="person-row">
         <button class="avatar" data-profile="${a.applicant_id}" title="View profile"
                 style="border:none;cursor:pointer;font-size:.95rem">${UI.initials(c.full_name)}</button>
         <div style="flex:1;min-width:0">
-          <button class="link-btn" data-profile="${a.applicant_id}">${UI.esc(c.full_name || "Applicant")}</button>
+          <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <button class="link-btn" data-profile="${a.applicant_id}">${UI.esc(c.full_name || "Applicant")}</button>${UI.nameBadgesHTML(c)}
+            ${a.can_edit ? '<span class="chip blue">Can edit</span>' : ""}
+          </span>
           <div class="muted" style="font-size:.82rem">${UI.esc(a.role)}${exp ? " · " + UI.esc(exp) : ""}</div>
-          ${a.message ? `<div class="soft" style="font-size:.85rem;margin-top:4px">"${UI.esc(a.message)}"</div>` : ""}
-          ${a.status === "accepted" && contacts ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${contacts}</div>` : ""}
+          ${noteHTML}
+          ${contacts ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${contacts}</div>` : ""}
         </div>
         ${actions}
       </div>`;
@@ -238,6 +270,11 @@
           <input class="input" id="crewSearch" placeholder="username or name" autocomplete="off"></div>
         <div class="field"><label>Role</label>
           <select class="select" id="crewRole">${roleOpts.map((r) => `<option>${UI.esc(r)}</option>`).join("")}</select></div>
+        <div class="field">
+          <label class="switch"><input type="checkbox" id="crewCanEdit"><span class="track"></span>
+            <span>Give them editing permissions on this production</span></label>
+          <div class="hint">They'll be able to change the production's details, not the roster.</div>
+        </div>
         <div id="crewResults"></div>
       </div>`);
 
@@ -265,7 +302,7 @@
         results.querySelectorAll("[data-add]").forEach((b) => b.onclick = async () => {
           try {
             b.disabled = true;
-            await SFC.addCrew(p.id, b.dataset.add, m.q("#crewRole").value);
+            await SFC.addCrew(p.id, b.dataset.add, m.q("#crewRole").value, m.q("#crewCanEdit").checked);
             m.close(); UI.toast("Added to your roster", "ok");
             setTimeout(() => location.reload(), 600);
           } catch (err) { UI.toast(err.message, "err"); b.disabled = false; }

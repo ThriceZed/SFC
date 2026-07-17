@@ -1,0 +1,88 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SFC+ | Student Film Connection</title>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%233b6bf5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>S</text></svg>">
+
+<body data-page="sfc-plus">
+<section class="mini-hero" style="padding-bottom:30px">
+  <span class="blob b1"></span><span class="blob b2"></span>
+  <div class="container" style="position:relative;z-index:1">
+    <span class="chip blue" style="margin-bottom:16px">SFC+</span>
+    <h1>Back the platform. Get the checkmark.</h1>
+    <p>SFC+ is a small way to support Student Film Connection while it's free for everyone else. It's not a paywall: everything else on the site stays open.</p>
+  </div>
+</section>
+
+<div class="page" style="padding-top:0">
+  <div class="container" style="max-width:820px">
+    <div class="grid grid-3" style="margin-bottom:40px">
+      <div class="card card-pad">
+        <div style="font-size:1.6rem">✓</div>
+        <h3 style="font-size:1.1rem;margin-top:10px">Verified checkmark</h3>
+        <p class="soft" style="font-size:.9rem;margin:0">A checkmark next to your name wherever it shows up on SFC, so people know it's really you.</p>
+      </div>
+      <div class="card card-pad">
+        <div style="font-size:1.6rem">💬</div>
+        <h3 style="font-size:1.1rem;margin-top:10px">Support the platform</h3>
+        <p class="soft" style="font-size:.9rem;margin:0">SFC stays free for every student filmmaker. SFC+ is how the people who can chip in, do.</p>
+      </div>
+      <div class="card card-pad">
+        <div style="font-size:1.6rem">🎬</div>
+        <h3 style="font-size:1.1rem;margin-top:10px">More, over time</h3>
+        <p class="soft" style="font-size:.9rem;margin:0">SFC+ is early. New perks land here as the platform grows.</p>
+      </div>
+    </div>
+
+    <div id="root"></div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script>
+(async function () {
+  const user = await UI.mountChrome();
+  const root = document.getElementById("root");
+
+  if (!user) {
+    root.innerHTML = `<div class="card card-pad center" style="padding:50px">
+      <h2>Sign in to redeem a code</h2>
+      <p class="soft" style="max-width:36ch;margin:8px auto 20px">You'll need an SFC account before claiming SFC+.</p>
+      <button class="btn btn-primary btn-lg" id="signinBtn">Sign up or log in</button></div>`;
+    document.getElementById("signinBtn").onclick = () => UI.openAuth("login");
+    return;
+  }
+
+  if ((user.badges || []).includes("SFC+")) {
+    root.innerHTML = `<div class="card card-pad center" style="padding:50px">
+      <div style="font-size:2.2rem">${UI.verifiedHTML(user) || "✓"}</div>
+      <h2 style="margin-top:14px">You're on SFC+</h2>
+      <p class="soft">Thanks for backing the platform.</p></div>`;
+    return;
+  }
+
+  root.innerHTML = `<div class="card card-pad" style="padding:34px;max-width:480px;margin:0 auto">
+    <h3 style="margin-bottom:6px">Have a code?</h3>
+    <p class="soft" style="font-size:.92rem">Codes are issued by SFC staff. Each one works for one account.</p>
+    <form id="redeemForm">
+      <div class="field"><label>Code</label>
+        <input class="input" name="code" required placeholder="SFC-XXXX-XXXX" autocomplete="off" style="text-transform:uppercase"></div>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Redeem</button>
+    </form>
+  </div>`;
+
+  document.getElementById("redeemForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      UI.setBusy(f, true);
+      await SFC.redeemCode(f.code.value.trim());
+      UI.toast("Welcome to SFC+!", "ok");
+      setTimeout(() => location.reload(), 700);
+    } catch (err) { UI.toast(err.message, "err"); UI.setBusy(f, false); }
+  };
+})();
+</script>

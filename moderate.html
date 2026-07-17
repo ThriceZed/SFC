@@ -20,8 +20,22 @@
   const user = await UI.mountChrome();
   const root = document.getElementById("root");
 
-  // Cosmetic gate only. The real enforcement is the is_staff() RLS policies:
-  // a non-staff user who loads this page can look, but every write is rejected.
+  // Not signed in at all: this isn't necessarily a non-staff person, it's
+  // just an unauthenticated visitor. Offer the normal sign-in path instead
+  // of a dead-end "staff only" message with no way forward.
+  if (!user) {
+    root.innerHTML = `<div class="empty" style="padding:80px 20px">
+      <div class="ico">🔒</div><h2>Sign in first</h2>
+      <p class="soft" style="max-width:40ch;margin:8px auto 20px">
+        Log in with your staff account to reach the moderation tools.</p>
+      <button class="btn btn-primary btn-lg" id="signinBtn">Log in</button></div>`;
+    document.getElementById("signinBtn").onclick = () => UI.openAuth("login");
+    return;
+  }
+
+  // Signed in, but not staff. Cosmetic only: the real gate is the
+  // is_staff() RLS policies, so a non-staff user reaching this far can
+  // look, but every write is refused server-side.
   if (!UI.isStaff(user)) {
     root.innerHTML = `<div class="empty" style="padding:80px 20px">
       <div class="ico">🔒</div><h2>Staff only</h2>
@@ -31,79 +45,227 @@
     return;
   }
 
-  const all = await SFC.listProductions({}, user.area_code || "");
-  const creators = all.length ? await SFC.getProfiles([...new Set(all.map((p) => p.creator_id))]) : [];
-  const byId = Object.fromEntries(creators.map((c) => [c.id, c]));
-
   root.innerHTML = `
     <div class="page-head">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <h1 style="margin:0">Moderate</h1><span class="badge badge-staff">Staff</span>
       </div>
-      <p>Every production on SFC. You can edit or remove any of them.</p>
+      <p>Productions, profiles, and SFC+ codes across the whole site.</p>
     </div>
-
-    <div class="filters">
-      <div class="field" style="flex:2">
-        <label>Search</label>
-        <input class="input" id="mQuery" placeholder="Title, logline, creator…">
-      </div>
-      <div class="field">
-        <label>Status</label>
-        <select class="select" id="mStatus">
-          <option value="">Any</option><option value="recruiting">Recruiting</option>
-          <option value="full">Cast full</option><option value="wrapped">Wrapped</option>
-        </select>
-      </div>
+    <div class="seg" style="max-width:420px;margin:0 0 26px">
+      <button type="button" data-tab="productions" class="active">Productions</button>
+      <button type="button" data-tab="profiles">Profiles</button>
+      <button type="button" data-tab="codes">SFC+ Codes</button>
     </div>
+    <div id="panel"></div>`;
 
-    <div id="mCount" class="muted" style="margin-bottom:14px;font-size:.9rem"></div>
-    <div id="mList" style="display:flex;flex-direction:column;gap:12px"></div>`;
+  const panel = document.getElementById("panel");
+  const tabs = { productions: renderProductions, profiles: renderProfiles, codes: renderCodes };
+  root.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => {
+    root.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
+    tabs[b.dataset.tab]();
+  });
 
-  const $ = (id) => document.getElementById(id);
+  // ================================================================
+  // Productions
+  // ================================================================
+  async function renderProductions() {
+    panel.innerHTML = `<div class="filters">
+        <div class="field" style="flex:2"><label>Search</label>
+          <input class="input" id="mQuery" placeholder="Title, logline, creator…"></div>
+        <div class="field"><label>Status</label>
+          <select class="select" id="mStatus">
+            <option value="">Any</option><option value="recruiting">Recruiting</option>
+            <option value="full">Cast full</option><option value="wrapped">Wrapped</option>
+          </select></div>
+      </div>
+      <div id="mCount" class="muted" style="margin-bottom:14px;font-size:.9rem"></div>
+      <div id="mList" style="display:flex;flex-direction:column;gap:12px"></div>`;
 
-  function render() {
-    const q = $("mQuery").value.trim().toLowerCase();
-    const st = $("mStatus").value;
-    const list = all.filter((p) => {
-      const c = byId[p.creator_id];
-      const hay = `${p.title} ${p.logline} ${c?.full_name || ""} ${c?.username || ""}`.toLowerCase();
-      return (!q || hay.includes(q)) && (!st || p.status === st);
-    });
+    const all = await SFC.listProductions({}, user.area_code || "");
+    const creators = all.length ? await SFC.getProfiles([...new Set(all.map((p) => p.creator_id))]) : [];
+    const byId = Object.fromEntries(creators.map((c) => [c.id, c]));
+    const $ = (id) => document.getElementById(id);
 
-    $("mCount").textContent = `${list.length} of ${all.length} production${all.length === 1 ? "" : "s"}`;
-    $("mList").innerHTML = list.length ? list.map((p) => {
-      const c = byId[p.creator_id];
-      return `<div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <a href="production.html?id=${encodeURIComponent(p.id)}"
-               style="font-weight:700;font-size:1.05rem;color:var(--text)">${UI.esc(p.title)}</a>
-            ${UI.statusChip(p.status)}
-            ${p.type === "shoot" ? '<span class="chip">Shoot</span>' : ""}
+    function draw() {
+      const q = $("mQuery").value.trim().toLowerCase();
+      const st = $("mStatus").value;
+      const list = all.filter((p) => {
+        const c = byId[p.creator_id];
+        const hay = `${p.title} ${p.logline} ${c?.full_name || ""} ${c?.username || ""}`.toLowerCase();
+        return (!q || hay.includes(q)) && (!st || p.status === st);
+      });
+
+      $("mCount").textContent = `${list.length} of ${all.length} production${all.length === 1 ? "" : "s"}`;
+      $("mList").innerHTML = list.length ? list.map((p) => {
+        const c = byId[p.creator_id];
+        return `<div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <a href="production.html?id=${encodeURIComponent(p.id)}"
+                 style="font-weight:700;font-size:1.05rem;color:var(--text)">${UI.esc(p.title)}</a>
+              ${UI.statusChip(p.status)}
+              <span class="chip">${p.type === "shoot" ? "Shoot" : "Production"}</span>
+            </div>
+            <div class="muted" style="font-size:.85rem;margin-top:3px">
+              ${UI.esc(c?.full_name || "Unknown")}${UI.nameBadgesHTML(c)} ${UI.esc(UI.handle(c?.username))}
+              · ${UI.esc(p.location || "")} · ${UI.fmtDateRange(p.start_date, p.end_date)}
+            </div>
           </div>
-          <div class="muted" style="font-size:.85rem;margin-top:3px">
-            ${UI.esc(c?.full_name || "Unknown")} ${UI.esc(UI.handle(c?.username))}
-            · ${UI.esc(p.location || "")} · ${UI.fmtDateRange(p.start_date, p.end_date)}
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-ghost" data-edit="${p.id}">Edit</button>
+            <button class="btn btn-sm btn-danger" data-del="${p.id}">Delete</button>
           </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-ghost" data-edit="${p.id}">Edit</button>
-          <button class="btn btn-sm btn-danger" data-del="${p.id}">Delete</button>
-        </div>
-      </div>`;
-    }).join("")
-      : '<div class="empty"><div class="ico">🎬</div><p>Nothing matches.</p></div>';
+        </div>`;
+      }).join("") : '<div class="empty"><div class="ico">🎬</div><p>Nothing matches.</p></div>';
 
-    $("mList").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () =>
-      UI.openEditProduction(all.find((x) => x.id === b.dataset.edit)));
-    $("mList").querySelectorAll("[data-del]").forEach((b) => b.onclick = () =>
-      UI.confirmDelete(all.find((x) => x.id === b.dataset.del), () => location.reload()));
+      $("mList").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () =>
+        UI.openEditProduction(all.find((x) => x.id === b.dataset.edit)));
+      $("mList").querySelectorAll("[data-del]").forEach((b) => b.onclick = () =>
+        UI.confirmDelete(all.find((x) => x.id === b.dataset.del), () => renderProductions()));
+    }
+
+    let t;
+    $("mQuery").addEventListener("input", () => { clearTimeout(t); t = setTimeout(draw, 180); });
+    $("mStatus").addEventListener("change", draw);
+    draw();
   }
 
-  let t;
-  $("mQuery").addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 180); });
-  $("mStatus").addEventListener("change", render);
-  render();
+  // ================================================================
+  // Profiles
+  // ================================================================
+  async function renderProfiles() {
+    panel.innerHTML = `<div class="filters">
+        <div class="field"><label>Search</label>
+          <input class="input" id="pQuery" placeholder="Name or username…"></div>
+      </div>
+      <div id="pCount" class="muted" style="margin-bottom:14px;font-size:.9rem"></div>
+      <div id="pList" style="display:flex;flex-direction:column;gap:12px"></div>`;
+
+    const all = await SFC.listAllProfiles();
+    const $ = (id) => document.getElementById(id);
+
+    function draw() {
+      const q = $("pQuery").value.trim().toLowerCase();
+      const list = all.filter((p) =>
+        !q || `${p.full_name} ${p.username}`.toLowerCase().includes(q));
+
+      $("pCount").textContent = `${list.length} of ${all.length} profile${all.length === 1 ? "" : "s"}`;
+      $("pList").innerHTML = list.length ? list.map((p) => `
+        <div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <div class="avatar">${UI.initials(p.full_name)}</div>
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <strong>${UI.esc(p.full_name)}</strong>${UI.nameBadgesHTML(p)}
+            </div>
+            <div class="muted" style="font-size:.85rem">${UI.esc(UI.handle(p.username))} · ${UI.esc(p.location || "")}</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-ghost" data-view="${p.id}">View</button>
+            <button class="btn btn-sm btn-ghost" data-edit="${p.id}">Edit</button>
+          </div>
+        </div>`).join("") : '<div class="empty"><div class="ico">👤</div><p>Nobody matches.</p></div>';
+
+      $("pList").querySelectorAll("[data-view]").forEach((b) => b.onclick = () =>
+        UI.openProfile(all.find((x) => x.id === b.dataset.view)));
+      $("pList").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () =>
+        openProfileEditor(all.find((x) => x.id === b.dataset.edit), draw));
+    }
+
+    let t;
+    $("pQuery").addEventListener("input", () => { clearTimeout(t); t = setTimeout(draw, 180); });
+    draw();
+  }
+
+  // Staff correction of another profile's non-badge fields. Badges stay
+  // SQL-editor-only: see protect_profile_badges in migration_002.sql.
+  function openProfileEditor(p, onSaved) {
+    const expOpts = window.SFC_CONFIG.EXPERIENCE.map((e) =>
+      `<option value="${e.id}" ${p.experience === e.id ? "selected" : ""}>${e.label}</option>`).join("");
+    const m = UI.modal(`
+      <div class="modal-head"><h2>Edit ${UI.esc(p.full_name)}</h2>
+        <p class="muted">${UI.esc(UI.handle(p.username))} · username and badges aren't editable here.</p></div>
+      <div class="modal-body">
+        <form id="peForm">
+          <div class="row2">
+            <div class="field"><label>First name</label><input class="input" name="first_name" value="${UI.esc(p.first_name || "")}"></div>
+            <div class="field"><label>Last name</label><input class="input" name="last_name" value="${UI.esc(p.last_name || "")}"></div>
+          </div>
+          <div class="field"><label>Bio</label><textarea class="textarea" name="bio">${UI.esc(p.bio || "")}</textarea></div>
+          <div class="field"><label>Roles</label><div class="pill-select" id="peRoles">${UI.rolesHTML("peRoles", p.roles || [])}</div></div>
+          <div class="row2">
+            <div class="field"><label>Experience</label><select class="select" name="experience">${expOpts}</select></div>
+            <div class="field"><label>Area / zip code</label><input class="input" name="area_code" value="${UI.esc(p.area_code || "")}"></div>
+          </div>
+          <div class="field"><label>Location</label><input class="input" name="location" value="${UI.esc(p.location || "")}"></div>
+          <button class="btn btn-primary btn-block btn-lg" type="submit">Save</button>
+        </form>
+      </div>`, { wide: true });
+
+    m.q("#peForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const roles = [...f.querySelectorAll("#peRoles input:checked")].map((i) => i.value);
+      const fn = f.first_name.value.trim(), ln = f.last_name.value.trim();
+      try {
+        UI.setBusy(f, true);
+        await SFC.adminUpdateProfile(p.id, {
+          first_name: fn, last_name: ln, full_name: `${fn} ${ln}`.trim(),
+          bio: f.bio.value.trim(), roles, experience: f.experience.value,
+          area_code: f.area_code.value.trim(), location: f.location.value.trim(),
+        });
+        m.close(); UI.toast("Profile updated", "ok");
+        onSaved?.();
+      } catch (err) { UI.toast(err.message, "err"); UI.setBusy(f, false); }
+    };
+  }
+
+  // ================================================================
+  // SFC+ Codes
+  // ================================================================
+  async function renderCodes() {
+    panel.innerHTML = `<div class="card card-pad" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
+        <div class="field" style="margin:0;flex:1;min-width:200px">
+          <label>New code <span class="muted" style="font-weight:400">(blank = auto-generate)</span></label>
+          <input class="input" id="newCode" placeholder="SFC-XXXX-XXXX" style="text-transform:uppercase">
+        </div>
+        <button class="btn btn-primary" id="addCodeBtn" style="margin-bottom:1px">+ Add code</button>
+      </div>
+      <div id="cCount" class="muted" style="margin-bottom:14px;font-size:.9rem"></div>
+      <div id="cList" style="display:flex;flex-direction:column;gap:10px"></div>`;
+
+    const $ = (id) => document.getElementById(id);
+
+    async function draw() {
+      const codes = await SFC.listCodes();
+      const assignedIds = codes.filter((c) => c.assigned_to).map((c) => c.assigned_to);
+      const profiles = assignedIds.length ? await SFC.getProfiles(assignedIds) : [];
+      const byId = Object.fromEntries(profiles.map((p) => [p.id, p]));
+
+      $("cCount").textContent = `${codes.length} code${codes.length === 1 ? "" : "s"}, ` +
+        `${codes.filter((c) => c.assigned_to).length} claimed`;
+      $("cList").innerHTML = codes.length ? codes.map((c) => {
+        const who = c.assigned_to ? byId[c.assigned_to] : null;
+        return `<div class="card card-pad" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <code style="font-family:'Space Grotesk';font-weight:700;flex:1;min-width:160px">${UI.esc(c.code)}</code>
+          ${who
+            ? `<span class="muted" style="font-size:.88rem">${UI.esc(who.full_name)} ${UI.esc(UI.handle(who.username))}</span>`
+            : '<span class="chip gray">Unclaimed</span>'}
+        </div>`;
+      }).join("") : '<div class="empty"><div class="ico">🎟️</div><p>No codes yet.</p></div>';
+    }
+
+    $("addCodeBtn").onclick = async () => {
+      try {
+        await SFC.createCode($("newCode").value.trim());
+        $("newCode").value = "";
+        UI.toast("Code added", "ok");
+        draw();
+      } catch (err) { UI.toast(err.message, "err"); }
+    };
+    draw();
+  }
+
+  renderProductions();
 })();
 </script>

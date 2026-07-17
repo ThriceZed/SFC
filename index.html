@@ -131,10 +131,11 @@
 <script src="js/app.js"></script>
 <script>
 (async function () {
-  // The home page is a pitch for visitors. Signed-in users get Search instead.
-  // Checked before mountChrome so we redirect without a flash of the hero.
+  // index.html is the pitch for visitors. Signed-in users get their own
+  // dashboard instead. Checked before mountChrome so we redirect without a
+  // flash of the hero.
   const signedIn = await SFC.getCurrentUser();
-  if (signedIn) { location.replace("search.html"); return; }
+  if (signedIn) { location.replace("home.html"); return; }
 
   const user = await UI.mountChrome();
 
