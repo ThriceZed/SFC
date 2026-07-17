@@ -23,8 +23,11 @@ const UI = (() => {
     aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
     <path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
 
-  const CHECK_SVG = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#fff"
-    stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+  // currentColor so the same mark works on a blue pill (white check) and on
+  // the card banner (blue check on white).
+  const checkSVG = (size = 10) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}"
+    fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"
+    stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
 
   // Badges are granted server-side only (see supabase/migration_002.sql and
   // migration_003.sql). Unknown values are ignored rather than rendered raw.
@@ -43,7 +46,7 @@ const UI = (() => {
   function verifiedHTML(profile) {
     if (!(profile?.badges || []).includes("SFC+")) return "";
     const title = window.SFC_CONFIG.BADGES?.["SFC+"]?.title || "SFC+ member";
-    return `<span class="verified-check" title="${esc(title)}">${CHECK_SVG}</span>`;
+    return `<span class="verified-check" title="${esc(title)}">${checkSVG()}</span>`;
   }
 
   // What to render next to any name, anywhere: checkmark first, then badges.
@@ -169,8 +172,8 @@ const UI = (() => {
             <div style="display:flex;flex-direction:column;gap:8px">
               <a href="search.html" class="soft">Browse productions</a>
               <a href="create.html" class="soft">Post a production</a>
-              <a href="sfc-plus.html" class="soft">SFC+</a>
               <a href="index.html#how" class="soft">How it works</a>
+              <a href="sfc-plus.html" class="soft">SFC+</a>
             </div>
           </div>
           <div>
@@ -602,12 +605,13 @@ const UI = (() => {
   }
 
   // ---------- follow / friend ----------
-  // Relative-to-viewer status. Errors (not signed in, RLS refusal, demo mode
-  // without the tables yet) collapse to "no relationship" rather than break
-  // the profile modal over a non-essential feature.
+  // Relative-to-viewer status, or null when it can't be determined (not
+  // signed in, or the follows/friendships tables aren't there yet). null
+  // hides the controls entirely: rendering a Follow button that throws the
+  // instant it's clicked is worse than not offering it.
   async function relationshipWith(otherId) {
     try { return await SFC.getRelationship(otherId); }
-    catch { return { following: false, friendStatus: "none" }; }
+    catch { return null; }
   }
 
   function relationshipButtonsHTML(rel) {
@@ -736,21 +740,19 @@ const UI = (() => {
     if (canDelete) m.q("#deleteProdBtn").onclick = () => confirmDelete(prod, () => { m.close(); onDeleted?.(); });
   }
 
-  // Typed confirmation: deleting cascades to every application.
+  // Deleting cascades to every application, so it still gets its own
+  // confirmation step, just not a typed one.
   function confirmDelete(prod, onDone) {
     const m = modal(`
       <div class="modal-head"><h2>Delete “${esc(prod.title)}”?</h2></div>
       <div class="modal-body">
         <p class="soft" style="margin-top:0">This permanently removes the production and
           every application to it. It can't be undone.</p>
-        <div class="field">
-          <label>Type <strong>DELETE</strong> to confirm</label>
-          <input class="input" id="delConfirm" placeholder="DELETE" autocomplete="off">
-        </div>
-        <button class="btn btn-danger btn-block btn-lg" id="delGo" disabled>Delete permanently</button>
+        <button class="btn btn-danger btn-block btn-lg" id="delGo" style="margin-top:20px">Delete permanently</button>
+        <button class="btn btn-ghost btn-block" id="delCancel" style="margin-top:10px">Cancel</button>
       </div>`);
-    const input = m.q("#delConfirm"), go = m.q("#delGo");
-    input.oninput = () => { go.disabled = input.value.trim().toUpperCase() !== "DELETE"; };
+    const go = m.q("#delGo");
+    m.q("#delCancel").onclick = m.close;
     go.onclick = async () => {
       try {
         go.disabled = true; go.textContent = "Deleting…";
@@ -768,6 +770,23 @@ const UI = (() => {
     return u;
   }
 
+  // Which of these productions were posted by SFC+ members. One lookup for
+  // the whole list rather than one per card. Falls back to an empty set:
+  // a missing checkmark is better than a broken grid.
+  async function plusCreatorIds(list) {
+    if (!list.length) return new Set();
+    try {
+      const creators = await SFC.getProfiles([...new Set(list.map((p) => p.creator_id))]);
+      return new Set(creators.filter((c) => (c.badges || []).includes("SFC+")).map((c) => c.id));
+    } catch { return new Set(); }
+  }
+
+  // Render a whole list of cards, checkmarking SFC+ creators' productions.
+  async function prodCards(list) {
+    const plus = await plusCreatorIds(list);
+    return list.map((p) => prodCard(p, { verified: plus.has(p.creator_id) })).join("");
+  }
+
   // ---------- featured ordering ----------
   // An SFC+ perk: a subscriber's productions come first in the featured
   // section. Array.sort is stable, so whatever order the caller passed in
@@ -776,24 +795,25 @@ const UI = (() => {
   // which is the promise the search page makes.
   async function featuredFirst(list) {
     if (!list.length) return list;
-    let plus = new Set();
-    try {
-      const creators = await SFC.getProfiles([...new Set(list.map((p) => p.creator_id))]);
-      plus = new Set(creators.filter((c) => (c.badges || []).includes("SFC+")).map((c) => c.id));
-    } catch { return list; }
+    const plus = await plusCreatorIds(list);
     return list.slice().sort((a, b) =>
       (plus.has(b.creator_id) ? 1 : 0) - (plus.has(a.creator_id) ? 1 : 0));
   }
 
   // ---------- production card ----------
-  function prodCard(p) {
+  // `verified` marks the creator as an SFC+ member; prodCards() below works
+  // it out in one lookup for a whole list.
+  function prodCard(p, { verified = false } = {}) {
     const rolesText = p.open_to_any
       ? '<span class="chip blue">Open to any role</span>'
       : (p.roles_needed || []).slice(0, 3).map((r) =>
           `<span class="tag">${esc(r.role)}${r.count > 1 ? " ×" + r.count : ""}</span>`).join("")
         + ((p.roles_needed || []).length > 3 ? `<span class="tag">+${p.roles_needed.length - 3}</span>` : "");
     return `<a class="card card-hover prod-card reveal" href="production.html?id=${encodeURIComponent(p.id)}">
-      <div class="banner"><span class="type-badge">${p.type === "shoot" ? "Single shoot" : "Film project"}</span></div>
+      <div class="banner">
+        <span class="type-badge">${p.type === "shoot" ? "Single shoot" : "Film project"}</span>
+        ${verified ? `<span class="banner-check" title="Posted by an SFC+ member">${checkSVG(13)}</span>` : ""}
+      </div>
       <div class="body">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <h3>${esc(p.title)}</h3>${statusChip(p.status)}
@@ -810,7 +830,7 @@ const UI = (() => {
   }
 
   return { mountChrome, toast, openAuth, openOnboarding, requireAuth, modal,
-           esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
+           esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, prodCards, rolesHTML,
            gearHTML, readGear, wireGear, gearOf, badgeHTML, verifiedHTML, nameBadgesHTML,
            contactRowsHTML, isStaff, openEditProduction, confirmDelete, openProfile,
            featuredFirst, observeReveals, el, setBusy };

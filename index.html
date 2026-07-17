@@ -152,8 +152,7 @@
   let list = await SFC.listProductions({ notableOnly: true }, area);
   if (list.length < 3) list = await SFC.listProductions({}, area);
   list = await UI.featuredFirst(list);
-  document.getElementById("notableGrid").innerHTML =
-    list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
+  document.getElementById("notableGrid").innerHTML = await UI.prodCards(list.slice(0, 3));
   UI.observeReveals();
 
   // count-up stats

@@ -230,7 +230,13 @@
         <button class="btn btn-primary" id="addCodeBtn" style="margin-bottom:1px">+ Add code</button>
       </div>
       <div id="cCount" class="muted" style="margin-bottom:14px;font-size:.9rem"></div>
-      <div id="cList" style="display:flex;flex-direction:column;gap:10px"></div>`;
+      <div id="cList" style="display:flex;flex-direction:column;gap:10px"></div>
+
+      <hr class="divider" style="margin:34px 0 22px">
+      <h3 style="margin-bottom:4px">SFC+ members</h3>
+      <p class="muted" style="font-size:.88rem;margin:0 0 16px">
+        Everyone currently carrying the SFC+ badge, however they got it.</p>
+      <div id="pmList" style="display:flex;flex-direction:column;gap:10px"></div>`;
 
     const $ = (id) => document.getElementById(id);
 
@@ -249,8 +255,51 @@
           ${who
             ? `<span class="muted" style="font-size:.88rem">${UI.esc(who.full_name)} ${UI.esc(UI.handle(who.username))}</span>`
             : '<span class="chip gray">Unclaimed</span>'}
+          <button class="btn btn-sm btn-ghost" data-delcode="${UI.esc(c.code)}">Remove</button>
         </div>`;
       }).join("") : '<div class="empty"><div class="ico">🎟️</div><p>No codes yet.</p></div>';
+
+      $("cList").querySelectorAll("[data-delcode]").forEach((b) => b.onclick = () => {
+        const code = b.dataset.delcode;
+        const claimed = codes.find((c) => c.code === code)?.assigned_to;
+        confirmAction({
+          title: `Remove code “${code}”?`,
+          body: claimed
+            ? "This code has already been claimed. Removing it deletes the record, but does not take SFC+ away from whoever redeemed it. Use the SFC+ members list below for that."
+            : "This deletes the code. Nobody will be able to redeem it.",
+          confirmLabel: "Remove code",
+          run: () => SFC.deleteCode(code),
+          done: "Code removed",
+          after: draw,
+        });
+      });
+
+      // Everyone on SFC+, not just code redeemers: a badge granted straight
+      // from the SQL editor has no code row to find it by.
+      const all = await SFC.listAllProfiles();
+      const members = all.filter((p) => (p.badges || []).includes("SFC+"));
+      $("pmList").innerHTML = members.length ? members.map((p) => `
+        <div class="card card-pad" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div class="avatar">${UI.initials(p.full_name)}</div>
+          <div style="flex:1;min-width:160px">
+            <div class="name-row"><strong>${UI.esc(p.full_name)}</strong>${UI.nameBadgesHTML(p)}</div>
+            <div class="muted" style="font-size:.85rem;margin-top:3px">${UI.esc(UI.handle(p.username))}</div>
+          </div>
+          <button class="btn btn-sm btn-ghost" data-revoke="${p.id}">Remove SFC+</button>
+        </div>`).join("")
+        : '<div class="empty" style="padding:30px"><p style="margin:0">Nobody has SFC+ yet.</p></div>';
+
+      $("pmList").querySelectorAll("[data-revoke]").forEach((b) => b.onclick = () => {
+        const who = members.find((p) => p.id === b.dataset.revoke);
+        confirmAction({
+          title: `Remove SFC+ from ${who.full_name}?`,
+          body: "They lose the checkmark and featured priority right away. Any code they redeemed stays claimed, so they can't reuse it.",
+          confirmLabel: "Remove SFC+",
+          run: () => SFC.setSfcPlus(who.id, false),
+          done: "SFC+ removed",
+          after: draw,
+        });
+      });
     }
 
     $("addCodeBtn").onclick = async () => {
@@ -262,6 +311,27 @@
       } catch (err) { UI.toast(err.message, "err"); }
     };
     draw();
+  }
+
+  // Small yes/no confirmation for the destructive bits of this panel.
+  function confirmAction({ title, body, confirmLabel, run, done, after }) {
+    const m = UI.modal(`
+      <div class="modal-head"><h2>${UI.esc(title)}</h2></div>
+      <div class="modal-body">
+        <p class="soft" style="margin-top:0">${UI.esc(body)}</p>
+        <button class="btn btn-danger btn-block btn-lg" id="caGo" style="margin-top:20px">${UI.esc(confirmLabel)}</button>
+        <button class="btn btn-ghost btn-block" id="caCancel" style="margin-top:10px">Cancel</button>
+      </div>`);
+    m.q("#caCancel").onclick = m.close;
+    m.q("#caGo").onclick = async () => {
+      const go = m.q("#caGo");
+      try {
+        go.disabled = true; go.textContent = "Working…";
+        await run();
+        m.close(); UI.toast(done, "ok");
+        after?.();
+      } catch (err) { UI.toast(err.message, "err"); go.disabled = false; go.textContent = confirmLabel; }
+    };
   }
 
   renderProductions();

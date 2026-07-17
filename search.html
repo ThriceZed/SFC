@@ -84,7 +84,7 @@
     if (!list.length) { sec.hidden = true; return; }
 
     sec.hidden = false;
-    $("featuredGrid").innerHTML = list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
+    $("featuredGrid").innerHTML = await UI.prodCards(list.slice(0, 3));
     UI.observeReveals();
   }
 
@@ -101,9 +101,9 @@
     const list = await SFC.listProductions(filters, area);
     await renderFeatured();
     $("resultCount").textContent = `${list.length} production${list.length === 1 ? "" : "s"}` +
-      (area ? " · sorted by distance" : "");
+      (area ? " · Sorted by distance" : "");
     $("results").innerHTML = list.length
-      ? list.map((p) => UI.prodCard(p)).join("")
+      ? await UI.prodCards(list)
       : `<div class="empty" style="grid-column:1/-1"><div class="ico">🎞️</div>
          <h3>No productions match</h3><p>Try clearing a filter or widening your search.</p></div>`;
     UI.observeReveals();

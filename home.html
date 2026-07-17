@@ -51,8 +51,7 @@
   // under a heading.
   if (!list.length) return;
   document.getElementById("notableSection").hidden = false;
-  document.getElementById("notableGrid").innerHTML =
-    list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
+  document.getElementById("notableGrid").innerHTML = await UI.prodCards(list.slice(0, 3));
   UI.observeReveals();
 })();
 </script>

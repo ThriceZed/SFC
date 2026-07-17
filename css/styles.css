@@ -280,6 +280,15 @@ section { position: relative; }
   letter-spacing: .08em; text-transform: uppercase; background: rgba(0,0,0,.22);
   padding: 4px 10px; border-radius: var(--r-pill); backdrop-filter: blur(4px);
 }
+/* Creator is on SFC+. Inverted from .verified-check (blue mark on white,
+   not white on blue) so it reads against the blue banner behind it. */
+.prod-card .banner .banner-check {
+  position: relative; z-index: 1; margin-left: 8px; flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: var(--accent-strong);
+  box-shadow: 0 2px 8px rgba(12,26,58,.22);
+}
 .prod-card .body { padding: 18px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .prod-card h3 { font-size: 1.22rem; margin: 0; }
 .prod-card .logline { color: var(--text-soft); font-size: .92rem; margin: 0; }

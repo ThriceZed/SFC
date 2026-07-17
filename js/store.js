@@ -268,9 +268,10 @@
     },
 
     // ---------- follow / friend ----------
+    // null when signed out, matching Live: the caller hides the controls.
     async getRelationship(otherId) {
       const s = read(LS.session, null);
-      if (!s) return { following: false, friendStatus: "none" };
+      if (!s) return null;
       const follows = read(LS.follows, []);
       const friendships = read(LS.friendships, []);
       const following = follows.some((f) => f.follower_id === s.id && f.followee_id === otherId);
@@ -371,6 +372,28 @@
       write(LS.codes, codes);
       return codes[codes.length - 1];
     },
+    async deleteCode(code) {
+      const s = read(LS.session, null);
+      const me = read(LS.profiles, []).find((p) => p.id === s?.id);
+      if (!(me?.badges || []).includes("Staff")) throw new Error("Staff only.");
+      write(LS.codes, read(LS.codes, []).filter((c) => c.code !== code));
+      return true;
+    },
+    // Mirrors the live set_sfc_plus() RPC. Deliberately not routed through
+    // updateProfile, which strips badges the way the live trigger does.
+    async setSfcPlus(userId, on) {
+      const s = read(LS.session, null);
+      const me = read(LS.profiles, []).find((p) => p.id === s?.id);
+      if (!(me?.badges || []).includes("Staff")) throw new Error("Staff only.");
+      const profiles = read(LS.profiles, []);
+      const i = profiles.findIndex((p) => p.id === userId);
+      if (i < 0) throw new Error("That profile no longer exists.");
+      const badges = new Set(profiles[i].badges || []);
+      on ? badges.add("SFC+") : badges.delete("SFC+");
+      profiles[i] = { ...profiles[i], badges: [...badges] };
+      write(LS.profiles, profiles);
+      return true;
+    },
   };
 
   // ================================================================
@@ -386,7 +409,28 @@
       }
       return sb;
     }
-    const must = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
+    // PostgREST's raw errors are unusable in a toast. An RLS refusal comes
+    // back as zero rows, which .single() then reports as "Cannot coerce the
+    // result to a single JSON object"; a table that doesn't exist yet leaks
+    // its schema-cache internals. Translate the cases we actually hit.
+    function friendlyError(error) {
+      const msg = error?.message || "Something went wrong.";
+      const missingTable = msg.match(/Could not find the table 'public\.(\w+)'/i);
+      if (missingTable) {
+        return `That feature isn't set up on the database yet (missing table: ${missingTable[1]}). ` +
+               `Run the latest migration in supabase/.`;
+      }
+      // PGRST202: the RPC doesn't exist, i.e. a migration adding it hasn't run.
+      if (error?.code === "PGRST202" || /Could not find the function/i.test(msg))
+        return "That feature isn't set up on the database yet. Run the latest migration in supabase/.";
+      // PGRST116: .single() got 0 rows. Almost always RLS refusing the write.
+      if (error?.code === "PGRST116" || /coerce the result to a single JSON object/i.test(msg))
+        return "You don't have permission to change that, or it no longer exists.";
+      if (error?.code === "42501") return "You don't have permission to do that.";
+      if (error?.code === "42703") return "That feature needs a database update. Run the latest migration in supabase/.";
+      return msg;
+    }
+    const must = ({ data, error }) => { if (error) throw new Error(friendlyError(error)); return data; };
 
     async function currentAuthId() {
       const { data } = await client().auth.getUser();
@@ -517,19 +561,26 @@
       // ---------- follow / friend ----------
       async getRelationship(otherId) {
         const id = await currentAuthId();
-        if (!id) return { following: false, friendStatus: "none" };
-        const [{ data: f }, { data: fr }] = await Promise.all([
+        if (!id) return null;
+        const [fRes, frRes] = await Promise.all([
           client().from("follows").select("follower_id").eq("follower_id", id).eq("followee_id", otherId).maybeSingle(),
           client().from("friendships").select("*")
             .or(`and(requester_id.eq.${id},addressee_id.eq.${otherId}),and(requester_id.eq.${otherId},addressee_id.eq.${id})`)
             .maybeSingle(),
         ]);
+        // Surface a failure instead of swallowing it. The caller hides the
+        // follow/friend controls when this throws, which is the right
+        // outcome if the tables aren't there: no buttons beats buttons that
+        // error the moment they're clicked.
+        if (fRes.error) throw new Error(friendlyError(fRes.error));
+        if (frRes.error) throw new Error(friendlyError(frRes.error));
+        const fr = frRes.data;
         let friendStatus = "none";
         if (fr) {
           if (fr.status === "accepted") friendStatus = "friends";
           else friendStatus = fr.requester_id === id ? "pending_out" : "pending_in";
         }
-        return { following: !!f, friendStatus };
+        return { following: !!fRes.data, friendStatus };
       },
       async follow(otherId) {
         const id = await currentAuthId();
@@ -590,6 +641,20 @@
           + "-" + Math.random().toString(36).slice(2, 6).toUpperCase()).trim();
         return must(await client().from("codes")
           .insert({ code: value, created_by: id }).select().single());
+      },
+      // Covered by the "staff manage codes" FOR ALL policy.
+      async deleteCode(code) {
+        const { error } = await client().from("codes").delete().eq("code", code);
+        if (error) throw new Error(friendlyError(error));
+        return true;
+      },
+      // Badges can't be written from the client, so this goes through the
+      // set_sfc_plus() security-definer RPC (migration_004.sql), which does
+      // its own is_staff() check against the caller.
+      async setSfcPlus(userId, on) {
+        const { error } = await client().rpc("set_sfc_plus", { p_user: userId, p_on: on });
+        if (error) throw new Error(friendlyError(error));
+        return true;
       },
     };
   })();
