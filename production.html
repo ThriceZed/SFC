@@ -31,6 +31,7 @@
 
   const creator = await SFC.getProfile(p.creator_id);
   const isOwner = user && user.id === p.creator_id;
+  const staff = UI.isStaff(user);
   const apps = await SFC.listApplicationsForProduction(p.id);
   const myApp = user ? apps.find((a) => a.applicant_id === user.id) : null;
 
@@ -43,6 +44,9 @@
   let sidePanel;
   if (isOwner) {
     sidePanel = await ownerPanel();
+  } else if (staff) {
+    // Moderating someone else's production: full control, plus the roster.
+    sidePanel = await ownerPanel({ moderating: true });
   } else if (myApp) {
     const statusMap = {
       pending: ['amber', "Application pending", "The creator hasn't responded yet. Hang tight!"],
@@ -78,8 +82,8 @@
               ${UI.statusChip(p.status)}
             </div>
             <div class="meta" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px">
-              <span class="chip">📍 ${UI.esc(p.location)}</span>
-              <span class="chip">📅 ${UI.fmtDateRange(p.start_date, p.end_date)}</span>
+              <span class="chip">${UI.esc(p.location)}</span>
+              <span class="chip">${UI.fmtDateRange(p.start_date, p.end_date)}</span>
               <span class="chip ${p.paid ? "green" : "gray"}">${p.paid ? "Paid" : "Unpaid"}</span>
             </div>
           </div>
@@ -118,7 +122,7 @@
     openApplyModal(p, u);
   };
 
-  if (isOwner) wireOwnerActions();
+  if (isOwner || staff) wireOwnerActions();
 
   // Anyone can look at who posted the production.
   const creatorBtn = document.getElementById("creatorProfile");
@@ -128,12 +132,7 @@
   // ---------- helpers ----------
   function contactBlock(c) {
     if (!c) return "";
-    const ig = UI.handle(c.contact_ig);
-    const rows = [
-      c.contact_email && `<div class="person-row"><span>✉️</span><a href="mailto:${UI.esc(c.contact_email)}">${UI.esc(c.contact_email)}</a></div>`,
-      ig && `<div class="person-row"><span>📷</span><span>${UI.esc(ig)}</span></div>`,
-      c.contact_phone && `<div class="person-row"><span>📱</span><span>${UI.esc(c.contact_phone)}</span></div>`,
-    ].filter(Boolean).join("");
+    const rows = UI.contactRowsHTML(c);
     return `<hr class="divider"><strong style="font-family:'Space Grotesk'">Reach the creator</strong>${rows || '<p class="muted">No contact info listed.</p>'}`;
   }
 
@@ -162,7 +161,7 @@
     };
   }
 
-  async function ownerPanel() {
+  async function ownerPanel({ moderating = false } = {}) {
     const applicantIds = apps.map((a) => a.applicant_id);
     const profiles = applicantIds.length ? await SFC.getProfiles(applicantIds) : [];
     const byId = Object.fromEntries(profiles.map((x) => [x.id, x]));
@@ -192,17 +191,22 @@
       </div>`;
     };
 
-    return `<div class="card card-pad">
-        <span class="chip blue">You own this</span>
+    return `<div class="card card-pad${moderating ? " mod-card" : ""}">
+        ${moderating
+          ? `<span class="badge badge-staff">Staff</span>
+             <p class="muted" style="font-size:.82rem;margin:10px 0 0">
+               You're moderating someone else's production.</p>`
+          : '<span class="chip blue">You own this</span>'}
         <h3 style="margin:12px 0 4px">Roster</h3>
         <p class="muted" style="font-size:.85rem;margin:0 0 8px">${accepted.length} accepted · ${pending.length} pending</p>
         <div id="applicantList">
           ${apps.length ? [...pending, ...accepted, ...apps.filter(a=>a.status==='declined')].map(row).join("")
-            : '<p class="muted" style="padding:14px 0">No applications yet. Share your production!</p>'}
+            : `<p class="muted" style="padding:14px 0">No applications yet.${moderating ? "" : " Share your production!"}</p>`}
         </div>
         <hr class="divider">
         <button class="btn btn-soft btn-block" id="addCrewBtn">+ Add someone you know</button>
-        <a class="btn btn-ghost btn-block" href="create.html" style="margin-top:8px">+ Post another</a>
+        <button class="btn btn-ghost btn-block" id="editProdBtn" style="margin-top:8px">Edit production</button>
+        ${moderating ? "" : '<a class="btn btn-ghost btn-block" href="create.html" style="margin-top:8px">+ Post another</a>'}
       </div>`;
   }
 
@@ -217,6 +221,10 @@
     });
     const addBtn = document.getElementById("addCrewBtn");
     if (addBtn) addBtn.onclick = openAddCrewModal;
+    const editBtn = document.getElementById("editProdBtn");
+    if (editBtn) editBtn.onclick = () => UI.openEditProduction(p, {
+      onDeleted: () => location.href = staff && !isOwner ? "moderate.html" : "account.html",
+    });
   }
 
   // ---- add a known collaborator straight to the roster ----

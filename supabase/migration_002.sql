@@ -126,7 +126,45 @@ create trigger profiles_protect_badges
   before update on public.profiles
   for each row execute function public.protect_profile_badges();
 
--- ---------- 5. owner can add crew they already know ----------
+-- ---------- 5. staff moderation ----------
+-- Who counts as a moderator: anyone carrying the Staff badge. Because badges
+-- can only be granted from this SQL editor (see protect_profile_badges above),
+-- moderator access can't be self-assigned from the app.
+--
+-- security definer + a stable search_path so this can read profiles without
+-- tripping the profiles RLS policies or recursing back into itself.
+create or replace function public.is_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select 'Staff' = any(coalesce(badges, '{}'))
+       from public.profiles where id = auth.uid()),
+    false);
+$$;
+
+-- Staff can edit or remove any production, on top of the creator-only policies.
+drop policy if exists "staff update productions" on public.productions;
+create policy "staff update productions" on public.productions
+  for update using (public.is_staff()) with check (public.is_staff());
+
+drop policy if exists "staff delete productions" on public.productions;
+create policy "staff delete productions" on public.productions
+  for delete using (public.is_staff());
+
+-- Staff can review and resolve any application.
+drop policy if exists "staff read applications" on public.applications;
+create policy "staff read applications" on public.applications
+  for select using (public.is_staff());
+
+drop policy if exists "staff update applications" on public.applications;
+create policy "staff update applications" on public.applications
+  for update using (public.is_staff()) with check (public.is_staff());
+
+-- ---------- 6. owner can add crew they already know ----------
 -- The existing "create own application" policy only lets you insert a row
 -- for yourself. This adds a second permissive insert policy so a creator
 -- can put a known collaborator straight onto their own production.

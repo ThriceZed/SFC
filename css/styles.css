@@ -105,11 +105,16 @@ section { position: relative; }
 }
 .nav .container { display: flex; align-items: center; gap: 22px; }
 .brand { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk'; font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; color: var(--text); }
+/* aspect-ratio + flex-shrink:0 keep the mark square: a flex parent would
+   otherwise squeeze the width and warp it on narrow screens. */
 .brand .logo {
-  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  width: 34px; height: 34px; aspect-ratio: 1 / 1; flex: 0 0 34px;
+  border-radius: 10px; display: grid; place-items: center;
   background: var(--accent-grad); color: #fff; font-weight: 700; font-size: .95rem;
-  box-shadow: var(--shadow-blue);
+  box-shadow: var(--shadow-blue); overflow: hidden;
 }
+.brand .logo img { width: 100%; height: 100%; object-fit: cover; }
+.footer .brand .logo { flex-basis: 30px; }
 .nav-links { display: flex; gap: 4px; margin-left: 12px; }
 .nav-links a {
   padding: 8px 14px; border-radius: var(--r-pill); color: var(--text-soft);
@@ -158,6 +163,8 @@ section { position: relative; }
 .btn-ghost:hover { transform: translateY(-2px); border-color: var(--accent); color: var(--accent-strong); box-shadow: var(--shadow-md); }
 .btn-soft { background: var(--blue-50); color: var(--accent-strong); }
 .btn-soft:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.btn-danger { background: #e0362b; color: #fff; box-shadow: 0 10px 24px rgba(224,54,43,.28); }
+.btn-danger:hover { transform: translateY(-2px); background: #c62b21; }
 .btn-block { width: 100%; }
 .btn-lg { padding: 15px 28px; font-size: 1.05rem; }
 .btn-sm { padding: 8px 14px; font-size: .85rem; }
@@ -428,6 +435,16 @@ section { position: relative; }
 .person-row:first-child { padding-top: 0; }
 .person-row:last-child { padding-bottom: 0; border-bottom: none; }
 .person-row .chip { flex-shrink: 0; }
+.contact-key {
+  min-width: 76px; flex-shrink: 0; font-size: .78rem; font-weight: 600;
+  color: var(--text-mute); text-transform: uppercase; letter-spacing: .04em;
+}
+/* Moderating someone else's production: visually distinct from owning it. */
+.mod-card { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.mod-card::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  border-radius: var(--r-lg) 0 0 var(--r-lg); background: #131c30;
+}
 .person-row > div[style*="flex:1"] { min-width: 0; }
 .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-grad); color: #fff; display: grid; place-items: center; font-weight: 700; font-family: 'Space Grotesk'; flex-shrink: 0; }
 button.avatar { transition: transform .2s var(--ease-spring); }
@@ -477,16 +494,28 @@ button.avatar:hover { transform: scale(1.08); }
   .footer .credit { flex-direction: column; }
 }
 
-/* mobile bottom nav */
+/* mobile bottom nav
+   Opaque, not translucent: a see-through bar shows page content sliding
+   beneath it. The ::after skirt fills the gap iOS Safari exposes below a
+   fixed element during overscroll / when the URL bar collapses. */
 .mobile-nav {
   display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
-  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px);
-  border-top: 1px solid var(--border); padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+}
+.mobile-nav::after {
+  content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 120px;
+  background: var(--surface); pointer-events: none;
 }
 .mobile-nav a { flex: 1; text-align: center; color: var(--text-mute); font-size: .7rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; }
 .mobile-nav a .mi { font-size: 1.25rem; }
 .mobile-nav a.active { color: var(--accent-strong); }
+
 @media (max-width: 640px) {
   .mobile-nav { display: flex; }
-  body { padding-bottom: 64px; }
+  /* Clear the bar plus the home-indicator inset so content isn't trapped under it. */
+  body { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  /* The logo mark already reads "SFC"; the wordmark is what eats the space. */
+  .brand-name { display: none; }
 }

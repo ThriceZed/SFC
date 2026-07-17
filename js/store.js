@@ -168,6 +168,13 @@
       return productions[i];
     },
 
+    async deleteProduction(id) {
+      write(LS.productions, read(LS.productions, []).filter((p) => p.id !== id));
+      // Mirrors the on-delete-cascade the live schema does for us.
+      write(LS.applications, read(LS.applications, []).filter((a) => a.production_id !== id));
+      return true;
+    },
+
     async listUserProductions(userId) {
       return read(LS.productions, []).filter((p) => p.creator_id === userId);
     },
@@ -318,6 +325,13 @@
       },
       async updateProduction(id, patch) {
         return must(await client().from("productions").update(patch).eq("id", id).select().single());
+      },
+      // Allowed for the creator, or for staff via the "staff delete productions"
+      // policy. Applications cascade away with the row.
+      async deleteProduction(id) {
+        const { error } = await client().from("productions").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+        return true;
       },
       async listUserProductions(userId) {
         return must(await client().from("productions").select("*").eq("creator_id", userId));

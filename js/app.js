@@ -36,6 +36,18 @@ const UI = (() => {
   // Everything a profile lists, presets and free text together.
   const gearOf = (p) => [...(p?.gear_list || []), ...(p?.gear ? [p.gear] : [])];
 
+  // Contact rows carry a text label: an "@handle" on its own doesn't say
+  // which network it belongs to.
+  function contactRowsHTML(p) {
+    const ig = handle(p?.contact_ig);
+    return [
+      p?.contact_email && ["Email", `<a href="mailto:${esc(p.contact_email)}">${esc(p.contact_email)}</a>`],
+      ig && ["Instagram", esc(ig)],
+      p?.contact_phone && ["Phone", esc(p.contact_phone)],
+    ].filter(Boolean).map(([k, v]) =>
+      `<div class="person-row"><span class="contact-key">${k}</span><span>${v}</span></div>`).join("");
+  }
+
   // A null end_date means the creator marked it TBD.
   function fmtDateRange(a, b) {
     if (!a) return "Dates TBD";
@@ -80,13 +92,15 @@ const UI = (() => {
     // Signed-in users have no home page: it's a marketing page for visitors,
     // so drop it from both navs and point the brand at Search instead.
     const navPages = PAGES.filter((p) => p.id !== "account" && !(user && p.id === "home"));
+    if (isStaff(user)) navPages.push({ id: "moderate", href: "moderate.html", label: "Moderate" });
     const homeHref = user ? "search.html" : "index.html";
 
     const nav = el("nav", "nav");
     nav.innerHTML = `
       <div class="container">
         <a class="brand" href="${homeHref}">
-          <span class="logo">SFC</span> Student Film Connection
+          <span class="logo">SFC</span>
+          <span class="brand-name">Student Film Connection</span>
         </a>
         <div class="nav-links">
           ${navPages.map((p) =>
@@ -120,7 +134,8 @@ const UI = (() => {
       <div class="container">
         <div class="cols">
           <div>
-            <div class="brand"><span class="logo" style="width:30px;height:30px;font-size:.8rem">SFC</span> Student Film Connection</div>
+            <div class="brand"><span class="logo" style="width:30px;height:30px;font-size:.8rem">SFC</span>
+              <span class="brand-name">Student Film Connection</span></div>
             <p>Find the crew, cast, and productions near you. Made by students, for students.</p>
           </div>
           <div>
@@ -505,11 +520,7 @@ const UI = (() => {
     const roles = (p.roles || []).length
       ? p.roles.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ")
       : '<span class="muted">No roles listed yet.</span>';
-    const contactRows = [
-      p.contact_email && `<div class="person-row"><span>✉️</span><a href="mailto:${esc(p.contact_email)}">${esc(p.contact_email)}</a></div>`,
-      handle(p.contact_ig) && `<div class="person-row"><span>📷</span><span>${esc(handle(p.contact_ig))}</span></div>`,
-      p.contact_phone && `<div class="person-row"><span>📱</span><span>${esc(p.contact_phone)}</span></div>`,
-    ].filter(Boolean).join("");
+    const contactRows = contactRowsHTML(p);
 
     const gear = gearOf(p);
     modal(`
@@ -538,6 +549,116 @@ const UI = (() => {
       </div>`);
   }
 
+  // ---------- staff ----------
+  // UI-level check only. The real gate is the is_staff() policies in
+  // supabase/migration_002.sql: hiding a button is not security.
+  const isStaff = (user) => !!user && (user.badges || []).includes("Staff");
+
+  // ---------- edit / delete a production ----------
+  // Used by the creator and by staff moderating someone else's production.
+  function openEditProduction(prod, { onSaved, onDeleted } = {}) {
+    const statusOpts = [
+      ["recruiting", "Recruiting"], ["full", "Cast full"], ["wrapped", "Wrapped"],
+    ].map(([v, l]) => `<option value="${v}" ${prod.status === v ? "selected" : ""}>${l}</option>`).join("");
+
+    const m = modal(`
+      <div class="modal-head"><h2>Edit production</h2>
+        <p class="muted">Changes go live immediately.</p></div>
+      <div class="modal-body">
+        <form id="editForm">
+          <div class="field"><label>Title</label>
+            <input class="input" name="title" required value="${esc(prod.title)}"></div>
+          <div class="field"><label>Logline</label>
+            <input class="input" name="logline" maxlength="140" value="${esc(prod.logline || "")}"></div>
+          <div class="field"><label>Details</label>
+            <textarea class="textarea" name="description">${esc(prod.description || "")}</textarea></div>
+          <div class="row2">
+            <div class="field"><label>Start date</label>
+              <input class="input" type="date" name="start_date" value="${esc(prod.start_date || "")}"></div>
+            <div class="field"><label>End date</label>
+              <input class="input" type="date" name="end_date" id="eEnd" value="${esc(prod.end_date || "")}">
+              <label class="switch" style="margin-top:10px">
+                <input type="checkbox" id="eTBD" ${!prod.end_date ? "checked" : ""}><span class="track"></span>
+                <span>End date is TBD</span></label>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Location</label>
+              <input class="input" name="location" value="${esc(prod.location || "")}"></div>
+            <div class="field"><label>Area / zip code</label>
+              <input class="input" name="area_code" value="${esc(prod.area_code || "")}"></div>
+          </div>
+          <div class="field"><label>Status</label>
+            <select class="select" name="status">${statusOpts}</select></div>
+          <div class="field">
+            <label class="switch"><input type="checkbox" name="paid" ${prod.paid ? "checked" : ""}>
+              <span class="track"></span><span>This is a paid production</span></label>
+          </div>
+          <div class="field"><label>Gear / what you provide</label>
+            <input class="input" name="gear_provided" value="${esc(prod.gear_provided || "")}"></div>
+          <button class="btn btn-primary btn-block btn-lg" type="submit">Save changes</button>
+        </form>
+        <hr class="divider">
+        <button class="btn btn-danger btn-block" id="deleteProdBtn">Delete this production</button>
+        <p class="hint center" style="margin-top:8px">Deleting also removes every application to it. This can't be undone.</p>
+      </div>`, { wide: true });
+
+    const end = m.q("#eEnd"), tbd = m.q("#eTBD");
+    const syncTBD = () => {
+      end.disabled = tbd.checked;
+      end.style.opacity = tbd.checked ? ".45" : "1";
+      if (tbd.checked) end.value = "";
+    };
+    tbd.onchange = syncTBD; syncTBD();
+
+    m.q("#editForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const patch = {
+        title: f.title.value.trim(), logline: f.logline.value.trim(),
+        description: f.description.value.trim(),
+        start_date: f.start_date.value || null,
+        end_date: tbd.checked ? null : (f.end_date.value || null),
+        location: f.location.value.trim(), area_code: f.area_code.value.trim(),
+        status: f.status.value, paid: f.paid.checked,
+        gear_provided: f.gear_provided.value.trim(),
+      };
+      try {
+        setBusy(f, true);
+        await SFC.updateProduction(prod.id, patch);
+        m.close(); toast("Production updated", "ok");
+        onSaved ? onSaved() : location.reload();
+      } catch (err) { toast(err.message, "err"); setBusy(f, false); }
+    };
+
+    m.q("#deleteProdBtn").onclick = () => confirmDelete(prod, () => { m.close(); onDeleted?.(); });
+  }
+
+  // Typed confirmation: deleting cascades to every application.
+  function confirmDelete(prod, onDone) {
+    const m = modal(`
+      <div class="modal-head"><h2>Delete “${esc(prod.title)}”?</h2></div>
+      <div class="modal-body">
+        <p class="soft" style="margin-top:0">This permanently removes the production and
+          every application to it. It can't be undone.</p>
+        <div class="field">
+          <label>Type <strong>DELETE</strong> to confirm</label>
+          <input class="input" id="delConfirm" placeholder="DELETE" autocomplete="off">
+        </div>
+        <button class="btn btn-danger btn-block btn-lg" id="delGo" disabled>Delete permanently</button>
+      </div>`);
+    const input = m.q("#delConfirm"), go = m.q("#delGo");
+    input.oninput = () => { go.disabled = input.value.trim().toUpperCase() !== "DELETE"; };
+    go.onclick = async () => {
+      try {
+        go.disabled = true; go.textContent = "Deleting…";
+        await SFC.deleteProduction(prod.id);
+        m.close(); toast("Production deleted", "ok");
+        onDone ? onDone() : (location.href = "account.html");
+      } catch (err) { toast(err.message, "err"); go.disabled = false; go.textContent = "Delete permanently"; }
+    };
+  }
+
   // ---------- require auth ----------
   async function requireAuth(action = "do that") {
     const u = await SFC.getCurrentUser();
@@ -561,8 +682,8 @@ const UI = (() => {
         <p class="logline">${esc(p.logline)}</p>
         <div class="roles-row">${rolesText}</div>
         <div class="meta">
-          <span class="chip">📍 ${esc(p.location)}</span>
-          <span class="chip">📅 ${fmtDateRange(p.start_date, p.end_date)}</span>
+          <span class="chip">${esc(p.location)}</span>
+          <span class="chip">${fmtDateRange(p.start_date, p.end_date)}</span>
           <span class="chip ${p.paid ? "green" : "gray"}">${p.paid ? "Paid" : "Unpaid"}</span>
         </div>
       </div>
@@ -571,6 +692,7 @@ const UI = (() => {
 
   return { mountChrome, toast, openAuth, openOnboarding, requireAuth, modal,
            esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
-           gearHTML, readGear, wireGear, gearOf, badgeHTML, openProfile,
+           gearHTML, readGear, wireGear, gearOf, badgeHTML, contactRowsHTML,
+           isStaff, openEditProduction, confirmDelete, openProfile,
            observeReveals, el, setBusy };
 })();
