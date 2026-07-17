@@ -107,9 +107,9 @@
               ${UI.statusChip(p.status)}
               <span class="chip">${p.type === "shoot" ? "Shoot" : "Production"}</span>
             </div>
-            <div class="muted" style="font-size:.85rem;margin-top:3px">
-              ${UI.esc(c?.full_name || "Unknown")}${UI.nameBadgesHTML(c)} ${UI.esc(UI.handle(c?.username))}
-              · ${UI.esc(p.location || "")} · ${UI.fmtDateRange(p.start_date, p.end_date)}
+            <div class="muted" style="font-size:.85rem;margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span class="name-row">${UI.esc(c?.full_name || "Unknown")}${UI.nameBadgesHTML(c)}</span>
+              <span>${UI.esc(UI.handle(c?.username))} · ${UI.esc(p.location || "")} · ${UI.fmtDateRange(p.start_date, p.end_date)}</span>
             </div>
           </div>
           <div style="display:flex;gap:8px">
@@ -155,10 +155,8 @@
         <div class="card card-pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
           <div class="avatar">${UI.initials(p.full_name)}</div>
           <div style="flex:1;min-width:200px">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <strong>${UI.esc(p.full_name)}</strong>${UI.nameBadgesHTML(p)}
-            </div>
-            <div class="muted" style="font-size:.85rem">${UI.esc(UI.handle(p.username))} · ${UI.esc(p.location || "")}</div>
+            <div class="name-row"><strong>${UI.esc(p.full_name)}</strong>${UI.nameBadgesHTML(p)}</div>
+            <div class="muted" style="font-size:.85rem;margin-top:3px">${UI.esc(UI.handle(p.username))} · ${UI.esc(p.location || "")}</div>
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-sm btn-ghost" data-view="${p.id}">View</button>

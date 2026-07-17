@@ -146,10 +146,12 @@
     b.onclick = () => user ? location.href = "search.html" : UI.openAuth("signup");
   });
 
-  // notable productions (fall back to newest if none flagged notable)
+  // notable productions (fall back to newest if none flagged notable),
+  // with SFC+ creators promoted to the front as a subscriber perk
   const area = user?.area_code || "";
   let list = await SFC.listProductions({ notableOnly: true }, area);
   if (list.length < 3) list = await SFC.listProductions({}, area);
+  list = await UI.featuredFirst(list);
   document.getElementById("notableGrid").innerHTML =
     list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
   UI.observeReveals();

@@ -12,6 +12,14 @@
       <p>Films and shoots looking for crew and cast, <span id="nearNote">closest to you first</span>.</p>
     </div>
 
+    <section id="featuredSection" hidden style="margin-bottom:34px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+        <h2 style="font-size:1.3rem;margin:0">Featured</h2>
+        <span class="muted" style="font-size:.85rem">Notable productions near you</span>
+      </div>
+      <div class="grid grid-3" id="featuredGrid"></div>
+    </section>
+
     <div class="filters">
       <div class="field" style="flex:2">
         <label>Search</label>
@@ -60,6 +68,26 @@
   // prefill area from profile
   if (user?.area_code) { $("fArea").value = user.area_code; $("nearNote").textContent = `closest to ${UI.esc(user.location || user.area_code)} first`; }
 
+  // Featured strip: notable productions with SFC+ creators promoted. Only
+  // shown on the unfiltered view. Once someone is actually searching, the
+  // results below are what they asked for and a promoted strip is noise.
+  async function renderFeatured() {
+    const filtering = $("fQuery").value.trim() || $("fRole").value ||
+                      $("fPaid").value || $("fWhen").value;
+    const sec = $("featuredSection");
+    if (filtering) { sec.hidden = true; return; }
+
+    const area = $("fArea").value.trim();
+    let list = await SFC.listProductions({ notableOnly: true }, area);
+    if (list.length < 3) list = await SFC.listProductions({}, area);
+    list = await UI.featuredFirst(list);
+    if (!list.length) { sec.hidden = true; return; }
+
+    sec.hidden = false;
+    $("featuredGrid").innerHTML = list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
+    UI.observeReveals();
+  }
+
   async function run() {
     const area = $("fArea").value.trim();
     const filters = {
@@ -68,7 +96,10 @@
       paid: $("fPaid").value,
       when: $("fWhen").value,
     };
+    // Results stay closest-first: the page promises that, so SFC+ does not
+    // jump the queue here, only in the featured strip above.
     const list = await SFC.listProductions(filters, area);
+    await renderFeatured();
     $("resultCount").textContent = `${list.length} production${list.length === 1 ? "" : "s"}` +
       (area ? " · sorted by distance" : "");
     $("results").innerHTML = list.length

@@ -113,7 +113,7 @@
         <div class="card card-pad" style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:52px;height:52px">${UI.initials(creator?.full_name)}</div>
           <div style="flex:1;min-width:0">
-            <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="name-row">
               <button class="link-btn" id="creatorProfile">${UI.esc(creator?.full_name || "Unknown")}</button>${UI.nameBadgesHTML(creator)}
             </span>
             ${creator?.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
@@ -211,11 +211,11 @@
         <button class="avatar" data-profile="${a.applicant_id}" title="View profile"
                 style="border:none;cursor:pointer;font-size:.95rem">${UI.initials(c.full_name)}</button>
         <div style="flex:1;min-width:0">
-          <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="name-row">
             <button class="link-btn" data-profile="${a.applicant_id}">${UI.esc(c.full_name || "Applicant")}</button>${UI.nameBadgesHTML(c)}
             ${a.can_edit ? '<span class="chip blue">Can edit</span>' : ""}
           </span>
-          <div class="muted" style="font-size:.82rem">${UI.esc(a.role)}${exp ? " · " + UI.esc(exp) : ""}</div>
+          <div class="muted" style="font-size:.82rem;margin-top:3px">${UI.esc(a.role)}${exp ? " · " + UI.esc(exp) : ""}</div>
           ${noteHTML}
           ${contacts ? `<div class="muted" style="font-size:.8rem;margin-top:4px">${contacts}</div>` : ""}
         </div>

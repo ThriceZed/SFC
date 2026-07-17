@@ -9,10 +9,22 @@
   <span class="blob b1"></span><span class="blob b2"></span>
   <div class="container" style="position:relative;z-index:1">
     <h1 id="greeting">Hello!</h1>
-    <p>What are we making today? Find a crew, or find your next role.</p>
     <div class="cta-row">
       <a class="btn btn-primary btn-lg" href="search.html">Search productions</a>
       <a class="btn btn-ghost btn-lg" href="create.html">Create production</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="notableSection" hidden>
+  <div class="container">
+    <div class="section-head">
+      <h2>Notable productions</h2>
+      <p>Student productions that stand out. Don't miss out on these opportunities.</p>
+    </div>
+    <div class="grid grid-3" id="notableGrid"></div>
+    <div class="center" style="margin-top:34px">
+      <a class="btn btn-soft btn-lg" href="search.html">See all productions</a>
     </div>
   </div>
 </section>
@@ -27,5 +39,20 @@
   if (!user) { location.replace("index.html"); return; }
   document.getElementById("greeting").textContent =
     `Hello, ${user.first_name || user.full_name?.split(" ")[0] || "there"}!`;
+
+  // Same featured grid as the marketing page: notable first, falling back to
+  // everything if there aren't enough flagged, with SFC+ creators promoted.
+  const area = user.area_code || "";
+  let list = await SFC.listProductions({ notableOnly: true }, area);
+  if (list.length < 3) list = await SFC.listProductions({}, area);
+  list = await UI.featuredFirst(list);
+
+  // Nothing to feature yet: leave it out rather than show an empty grid
+  // under a heading.
+  if (!list.length) return;
+  document.getElementById("notableSection").hidden = false;
+  document.getElementById("notableGrid").innerHTML =
+    list.slice(0, 3).map((p) => UI.prodCard(p)).join("");
+  UI.observeReveals();
 })();
 </script>

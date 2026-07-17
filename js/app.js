@@ -577,7 +577,7 @@ const UI = (() => {
         <div style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:56px;height:56px;font-size:1.2rem">${initials(p.full_name)}</div>
           <div style="min-width:0">
-            <h2 style="margin:0 0 2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <h2 class="name-row" style="margin:0 0 3px;gap:8px">
               ${esc(p.full_name || "Filmmaker")}${nameBadgesHTML(p)}</h2>
             <div class="muted" style="font-size:.9rem">
               ${esc(handle(p.username))}${p.location ? " · " + esc(p.location) : ""}
@@ -768,6 +768,23 @@ const UI = (() => {
     return u;
   }
 
+  // ---------- featured ordering ----------
+  // An SFC+ perk: a subscriber's productions come first in the featured
+  // section. Array.sort is stable, so whatever order the caller passed in
+  // (proximity, then soonest) is preserved within each group. Only the
+  // featured strip is reordered: plain search results stay closest-first,
+  // which is the promise the search page makes.
+  async function featuredFirst(list) {
+    if (!list.length) return list;
+    let plus = new Set();
+    try {
+      const creators = await SFC.getProfiles([...new Set(list.map((p) => p.creator_id))]);
+      plus = new Set(creators.filter((c) => (c.badges || []).includes("SFC+")).map((c) => c.id));
+    } catch { return list; }
+    return list.slice().sort((a, b) =>
+      (plus.has(b.creator_id) ? 1 : 0) - (plus.has(a.creator_id) ? 1 : 0));
+  }
+
   // ---------- production card ----------
   function prodCard(p) {
     const rolesText = p.open_to_any
@@ -796,5 +813,5 @@ const UI = (() => {
            esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
            gearHTML, readGear, wireGear, gearOf, badgeHTML, verifiedHTML, nameBadgesHTML,
            contactRowsHTML, isStaff, openEditProduction, confirmDelete, openProfile,
-           observeReveals, el, setBusy };
+           featuredFirst, observeReveals, el, setBusy };
 })();
