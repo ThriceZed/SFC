@@ -56,6 +56,9 @@
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
+/* Any author `display` beats the UA's [hidden] rule (same specificity, author
+   wins), which silently defeats the hidden attribute. Make hidden mean hidden. */
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
