@@ -28,6 +28,53 @@ window.SFC_CONFIG = {
     { id: "intermediate", label: "Intermediate" },
     { id: "advanced",     label: "Advanced" },
   ],
+
+  // Profile badges. These are deliberately NOT self-serve: a trigger in the
+  // migration blocks clients from writing their own badges, so they can only
+  // be granted from the SQL editor. Add new ones here and they render anywhere
+  // badges appear.
+  BADGES: {
+    "SFC+":  { cls: "badge-plus",  title: "SFC+ subscriber" },
+    "Staff": { cls: "badge-staff", title: "Student Film Connection staff" },
+  },
+
+  // Gear picker. Grouped presets to click, plus a free-text "Other" box for
+  // anything not listed. Keep the lists tight: this is student kit, not a
+  // rental house catalog.
+  GEAR: {
+    Cameras: [
+      "Sony A7 IV", "Sony FX3", "Sony FX30", "Sony FX6",
+      "Canon EOS R5", "Canon R6", "Canon C70",
+      "Blackmagic Pocket 4K", "Blackmagic Pocket 6K",
+      "Panasonic GH6", "Panasonic S5 II", "Lumix GH5",
+      "Nikon Z6", "Fujifilm X-T4", "RED Komodo", "ARRI Alexa Mini",
+      "DSLR (older)", "iPhone / smartphone",
+    ],
+    Lenses: [
+      "Kit zoom", "Nifty fifty (50mm)", "Sigma Art primes",
+      "Rokinon / Samyang cine primes", "Canon RF primes", "Sony G Master zoom",
+      "Vintage manual primes", "Macro lens", "Anamorphic adapter",
+    ],
+    Audio: [
+      "Zoom H4n / H5 / H6", "Tascam DR-40X", "Zoom F6 recorder",
+      "Rode NTG shotgun", "Sennheiser MKE 600", "Rode VideoMic",
+      "Rode Wireless GO II", "Sennheiser G4 lav", "Boom pole", "Blimp / deadcat",
+    ],
+    Lighting: [
+      "Aputure 120D / 300D", "Aputure MC pocket", "Nanlite / Godox LED",
+      "LED panel kit", "Softbox kit", "HMI kit", "Practicals / china ball",
+      "Reflector / bounce", "Flags + C-stands",
+    ],
+    Support: [
+      "Tripod (fluid head)", "DJI RS3 / gimbal", "Shoulder rig",
+      "Slider", "Dolly + track", "Drone (DJI)", "Car mount", "Grip truck",
+    ],
+    Post: [
+      "DaVinci Resolve Studio", "Adobe Premiere Pro", "Final Cut Pro",
+      "After Effects", "Pro Tools", "Color-calibrated monitor",
+      "Editing workstation",
+    ],
+  },
 };
 
 window.SFC_LIVE = !!(window.SFC_CONFIG.SUPABASE_URL && window.SFC_CONFIG.SUPABASE_ANON_KEY);

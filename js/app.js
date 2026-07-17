@@ -17,6 +17,25 @@ const UI = (() => {
     return s ? "@" + s : "";
   };
 
+  // Outline bell, sized to the current font.
+  const BELL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"
+    aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
+
+  // Badges are granted server-side only (see supabase/migration_002.sql).
+  // Unknown values are ignored rather than rendered raw.
+  function badgeHTML(profile) {
+    const defs = window.SFC_CONFIG.BADGES || {};
+    return (profile?.badges || [])
+      .filter((b) => defs[b])
+      .map((b) => `<span class="badge ${defs[b].cls}" title="${esc(defs[b].title)}">${esc(b)}</span>`)
+      .join("");
+  }
+
+  // Everything a profile lists, presets and free text together.
+  const gearOf = (p) => [...(p?.gear_list || []), ...(p?.gear ? [p.gear] : [])];
+
   // A null end_date means the creator marked it TBD.
   function fmtDateRange(a, b) {
     if (!a) return "Dates TBD";
@@ -75,7 +94,7 @@ const UI = (() => {
         </div>
         <div class="nav-right">
           ${user
-            ? `<button class="notif-btn" data-notif title="Notifications">🔔<span class="notif-badge" hidden>0</span></button>
+            ? `<button class="notif-btn" data-notif title="Notifications" aria-label="Notifications">${BELL_SVG}<span class="notif-badge" hidden>0</span></button>
                <a class="btn btn-ghost btn-sm" href="account.html">${esc(user.first_name || user.full_name?.split(" ")[0] || "Account")}</a>`
             : `<button class="btn btn-primary btn-sm" data-auth="login">Sign up</button>`}
         </div>
@@ -194,7 +213,8 @@ const UI = (() => {
               <span class="notif-text">${i.text}
                 <span class="notif-when">${timeAgo(i.when)}</span></span>
             </a>`).join("")
-        : `<div class="empty" style="padding:36px 10px"><div class="ico">🔔</div>
+        : `<div class="empty" style="padding:36px 10px">
+             <div class="ico" style="color:var(--text-mute);transform:scale(2.2);margin-bottom:22px">${BELL_SVG}</div>
              <p style="margin:0">Nothing yet. Apply to a production and you'll hear back here.</p></div>`;
       modal(`<div class="modal-head"><h2>Notifications</h2></div>
              <div class="modal-body" style="padding-top:0">${body}</div>`);
@@ -241,6 +261,103 @@ const UI = (() => {
     return `<input type="checkbox" id="${id}" value="${esc(r)}" ${selected.includes(r) ? "checked" : ""}>
             <label for="${id}">${esc(r)}</label>`;
   }).join("");
+
+  // Grouped gear checklist + a free-text "Other" box.
+  // Read it back with readGear(rootEl).
+  function gearHTML(selected = [], other = "") {
+    const groups = window.SFC_CONFIG.GEAR;
+
+    // Anything saved that the catalog no longer lists (renamed entry, older
+    // profile) would otherwise render no checkbox and be dropped on save.
+    // Surface it as its own checked group so it survives a round trip.
+    const known = new Set(Object.values(groups).flat());
+    const extras = selected.filter((s) => !known.has(s));
+
+    const sections = Object.entries(groups).map(([group, items], gi) => `
+      <div class="gear-group">
+        <button type="button" class="gear-head" data-gear-toggle>
+          <span>${esc(group)}</span>
+          <span class="gear-count" data-count-for="${esc(group)}"></span>
+          <span class="gear-caret">▾</span>
+        </button>
+        <div class="gear-body">
+          <div class="pill-select">
+            ${items.map((it, i) => {
+              const id = `gear_${gi}_${i}`;
+              return `<input type="checkbox" id="${id}" value="${esc(it)}" ${selected.includes(it) ? "checked" : ""}>
+                      <label for="${id}">${esc(it)}</label>`;
+            }).join("")}
+          </div>
+        </div>
+      </div>`).join("");
+    const extrasSection = extras.length ? `
+      <div class="gear-group open">
+        <button type="button" class="gear-head" data-gear-toggle>
+          <span>Also on your profile</span>
+          <span class="gear-count on" data-count-for="extras">${extras.length}</span>
+          <span class="gear-caret">▾</span>
+        </button>
+        <div class="gear-body">
+          <div class="pill-select">
+            ${extras.map((it, i) => {
+              const id = `gear_x_${i}`;
+              return `<input type="checkbox" id="${id}" value="${esc(it)}" checked>
+                      <label for="${id}">${esc(it)}</label>`;
+            }).join("")}
+          </div>
+          <div class="hint">Uncheck to remove.</div>
+        </div>
+      </div>` : "";
+
+    return `<div class="gear-picker" data-gear-picker>
+      ${sections}
+      ${extrasSection}
+      <div class="gear-group">
+        <button type="button" class="gear-head" data-gear-toggle>
+          <span>Other</span><span class="gear-caret">▾</span>
+        </button>
+        <div class="gear-body">
+          <input class="input" data-gear-other value="${esc(other)}"
+                 placeholder="Anything not listed: rigs, adapters, a specific body…">
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function readGear(root) {
+    const picker = root.querySelector("[data-gear-picker]");
+    if (!picker) return { gear_list: [], gear: "" };
+    return {
+      gear_list: [...picker.querySelectorAll('input[type="checkbox"]:checked')].map((i) => i.value),
+      gear: (picker.querySelector("[data-gear-other]")?.value || "").trim(),
+    };
+  }
+
+  // Collapsible sections + a live count per group.
+  function wireGear(root) {
+    const picker = root.querySelector("[data-gear-picker]");
+    if (!picker) return;
+    picker.querySelectorAll("[data-gear-toggle]").forEach((h) => {
+      h.onclick = () => h.parentElement.classList.toggle("open");
+    });
+    const sync = () => {
+      picker.querySelectorAll(".gear-group").forEach((g) => {
+        const badge = g.querySelector("[data-count-for]");
+        if (!badge) return;
+        const n = g.querySelectorAll('input[type="checkbox"]:checked').length;
+        badge.textContent = n ? n : "";
+        badge.classList.toggle("on", !!n);
+      });
+    };
+    picker.addEventListener("change", sync);
+    sync();
+    // Open any group that already has picks, so saved gear is visible.
+    picker.querySelectorAll(".gear-group").forEach((g) => {
+      if (g.querySelectorAll('input[type="checkbox"]:checked').length) g.classList.add("open");
+    });
+    const other = picker.querySelector("[data-gear-other]");
+    if (other?.value) other.closest(".gear-group").classList.add("open");
+  }
 
   function openAuth(mode = "login", onDone) {
     const expOpts = window.SFC_CONFIG.EXPERIENCE.map((e) =>
@@ -394,12 +511,14 @@ const UI = (() => {
       p.contact_phone && `<div class="person-row"><span>📱</span><span>${esc(p.contact_phone)}</span></div>`,
     ].filter(Boolean).join("");
 
+    const gear = gearOf(p);
     modal(`
       <div class="modal-head">
         <div style="display:flex;align-items:center;gap:14px">
           <div class="avatar" style="width:56px;height:56px;font-size:1.2rem">${initials(p.full_name)}</div>
           <div style="min-width:0">
-            <h2 style="margin:0 0 2px">${esc(p.full_name || "Filmmaker")}</h2>
+            <h2 style="margin:0 0 2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${esc(p.full_name || "Filmmaker")}${badgeHTML(p)}</h2>
             <div class="muted" style="font-size:.9rem">
               ${esc(handle(p.username))}${p.location ? " · " + esc(p.location) : ""}
               ${p.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}
@@ -411,7 +530,8 @@ const UI = (() => {
         ${p.bio ? `<p class="soft" style="margin-top:0;white-space:pre-wrap">${esc(p.bio)}</p>` : ""}
         <div class="field"><label>Roles</label><div style="display:flex;flex-wrap:wrap;gap:6px">${roles}</div></div>
         ${expLabel ? `<div class="field"><label>Experience</label><span class="chip">${esc(expLabel)}</span></div>` : ""}
-        ${p.gear ? `<div class="field"><label>Gear</label><p class="soft" style="margin:0">${esc(p.gear)}</p></div>` : ""}
+        ${gear.length ? `<div class="field"><label>Gear</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">${gear.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</div></div>` : ""}
         ${showContact && contactRows
           ? `<hr class="divider"><strong style="font-family:'Space Grotesk'">Contact</strong>${contactRows}`
           : showContact ? '<hr class="divider"><p class="muted">No contact details listed.</p>' : ""}
@@ -451,5 +571,6 @@ const UI = (() => {
 
   return { mountChrome, toast, openAuth, openOnboarding, requireAuth, modal,
            esc, initials, handle, timeAgo, fmtDateRange, statusChip, prodCard, rolesHTML,
-           openProfile, observeReveals, el, setBusy };
+           gearHTML, readGear, wireGear, gearOf, badgeHTML, openProfile,
+           observeReveals, el, setBusy };
 })();

@@ -37,8 +37,9 @@
   root.innerHTML = `
     <div class="page-head" style="display:flex;align-items:center;gap:18px">
       <div class="avatar" style="width:64px;height:64px;font-size:1.4rem">${UI.initials(user.full_name)}</div>
-      <div style="flex:1">
-        <h1 style="margin:0">${UI.esc(user.full_name)}</h1>
+      <div style="flex:1;min-width:0">
+        <h1 style="margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${UI.esc(user.full_name)}${UI.badgeHTML(user)}</h1>
         <p style="margin:0" class="muted">${UI.esc(UI.handle(user.username))}${user.location ? " · " + UI.esc(user.location) : ""}
           ${user.is_group ? '<span class="chip blue" style="margin-left:6px">Group</span>' : ""}</p>
       </div>
@@ -91,13 +92,17 @@
         <label>Group name</label><input class="input" name="group_name" value="${UI.esc(user.group_name || "")}" placeholder="Lens Collective">
       </div>
       <div class="field"><label>Bio</label><textarea class="textarea" name="bio" placeholder="Tell people about your style and what you're looking for…">${UI.esc(user.bio || "")}</textarea></div>
-      <div class="field"><label>Roles you do</label><div class="pill-select">${UI.rolesHTML("pfRoles", user.roles || [])}</div></div>
+      <div class="field"><label>Roles you do</label>
+        <div class="pill-select" id="rolesPick">${UI.rolesHTML("pfRoles", user.roles || [])}</div></div>
       <div class="row2">
         <div class="field"><label>Experience</label><select class="select" name="experience">${expOpts}</select></div>
         <div class="field"><label>Area / zip code</label><input class="input" value="${UI.esc(user.area_code || "")}" name="area_code"></div>
       </div>
       <div class="field"><label>Location</label><input class="input" name="location" value="${UI.esc(user.location || "")}"></div>
-      <div class="field"><label>Gear</label><input class="input" name="gear" value="${UI.esc(user.gear || "")}" placeholder="Camera, lenses, lights…"></div>
+      <div class="field"><label>Gear</label>
+        <div class="hint" style="margin:0 0 8px">Pick what you own, or add your own under Other.</div>
+        ${UI.gearHTML(user.gear_list || [], user.gear || "")}
+      </div>
       <hr class="divider">
       <h4 style="margin-bottom:14px">Contact <span class="muted" style="font-weight:400;font-size:.85rem">(shared only after you're accepted)</span></h4>
       <div class="row2">
@@ -113,17 +118,21 @@
     pf.is_group.onchange = (e) => {
       document.getElementById("groupNameField").style.display = e.target.checked ? "" : "none";
     };
+    UI.wireGear(pf);
 
     pf.onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
-      const roles = [...f.querySelectorAll(".pill-select input:checked")].map((i) => i.value);
+      // Scoped to #rolesPick: the gear picker also uses .pill-select.
+      const roles = [...f.querySelectorAll("#rolesPick input:checked")].map((i) => i.value);
       const fn = f.first_name.value.trim(), ln = f.last_name.value.trim();
+      // gear_list = picked presets, gear = whatever they typed under Other.
+      const { gear_list, gear } = UI.readGear(f);
       const patch = {
         first_name: fn, last_name: ln, full_name: `${fn} ${ln}`.trim(),
         bio: f.bio.value.trim(), roles, experience: f.experience.value,
         area_code: f.area_code.value.trim(), location: f.location.value.trim(),
-        gear: f.gear.value.trim(), contact_email: f.contact_email.value.trim(),
+        gear_list, gear, contact_email: f.contact_email.value.trim(),
         // Store handles bare; the UI adds the @ when rendering.
         contact_ig: f.contact_ig.value.trim().replace(/^@+/, ""),
         contact_phone: f.contact_phone.value.trim(),

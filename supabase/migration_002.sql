@@ -6,6 +6,14 @@
 --   1. Split names into first_name / last_name
 --   2. Track when an application was last decided (for notifications)
 --   3. Let a production owner add crew they already know
+--   4. Profile badges (SFC+ / Staff), which clients cannot self-grant
+--   5. Structured gear list
+--
+-- GRANTING A BADGE (from this SQL editor only, never the app):
+--   update public.profiles set badges = array['Staff']
+--    where username = 'your_username';
+--   update public.profiles set badges = array['SFC+','Staff']
+--    where username = 'someone_else';
 -- ============================================================
 
 -- ---------- 1. first / last name ----------
@@ -92,7 +100,33 @@ begin
 end;
 $$;
 
--- ---------- 4. owner can add crew they already know ----------
+-- ---------- 4. badges + structured gear ----------
+alter table public.profiles add column if not exists badges    text[] default '{}';
+-- Presets picked from the gear menu. The existing free-text `gear` column
+-- keeps whatever the user typed under "Other".
+alter table public.profiles add column if not exists gear_list text[] default '{}';
+
+-- Badges are a trust signal, so they must not be self-serve. The profile
+-- update policy legitimately lets a user edit their own row, which would
+-- otherwise let anyone hand themselves a Staff badge. PostgREST connects as
+-- `authenticated`/`anon`; the SQL editor connects as `postgres`. So: silently
+-- discard badge changes coming from the app, and allow them from here.
+create or replace function public.protect_profile_badges()
+returns trigger language plpgsql as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    new.badges := old.badges;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_protect_badges on public.profiles;
+create trigger profiles_protect_badges
+  before update on public.profiles
+  for each row execute function public.protect_profile_badges();
+
+-- ---------- 5. owner can add crew they already know ----------
 -- The existing "create own application" policy only lets you insert a row
 -- for yourself. This adds a second permissive insert policy so a creator
 -- can put a known collaborator straight onto their own production.

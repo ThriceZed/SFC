@@ -68,7 +68,8 @@
       if (profiles.some((p) => p.username === profile.username))
         throw new Error("That username is taken.");
       const id = uid("u");
-      const record = { id, contact_email: email, ...profile };
+      const { badges: _ignored, ...safe } = profile;
+      const record = { id, contact_email: email, badges: [], gear_list: [], gear: "", ...safe };
       profiles.push(record);
       creds[email.toLowerCase()] = { id, password };
       write(LS.profiles, profiles);
@@ -102,7 +103,10 @@
       if (!s) throw new Error("Not signed in.");
       const profiles = read(LS.profiles, []);
       const i = profiles.findIndex((p) => p.id === s.id);
-      profiles[i] = { ...profiles[i], ...patch };
+      // Badges are granted server-side only. Mirror the live protect_profile_badges
+      // trigger by dropping any client attempt to set them.
+      const { badges, ...safe } = patch;
+      profiles[i] = { ...profiles[i], ...safe };
       write(LS.profiles, profiles);
       return profiles[i];
     },

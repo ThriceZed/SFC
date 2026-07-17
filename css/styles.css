@@ -181,6 +181,50 @@ section { position: relative; }
   border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-soft); border: 1px solid var(--border);
 }
 
+/* ---------- Profile badges ---------- */
+/* Granted server-side only; see supabase/migration_002.sql. */
+.badge {
+  display: inline-flex; align-items: center; font-family: 'Space Grotesk', sans-serif;
+  font-size: .7rem; font-weight: 700; letter-spacing: .02em; line-height: 1;
+  padding: 5px 9px; border-radius: 7px; white-space: nowrap; vertical-align: middle;
+  text-transform: none;
+}
+.badge-plus {
+  background: var(--accent-grad); color: #fff;
+  box-shadow: 0 3px 10px rgba(59,107,245,.35);
+}
+.badge-staff {
+  background: #131c30; color: #fff;
+  box-shadow: 0 3px 10px rgba(19,28,48,.28);
+}
+
+/* ---------- Gear picker ---------- */
+.gear-picker {
+  border: 1.5px solid var(--border-strong); border-radius: var(--r-md); overflow: hidden;
+  background: var(--surface);
+}
+.gear-group + .gear-group { border-top: 1px solid var(--border); }
+.gear-head {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  font-weight: 600; font-size: .9rem; color: var(--text); text-align: left;
+  transition: background .16s;
+}
+.gear-head:hover { background: var(--surface-2); }
+.gear-head > span:first-child { flex: 1; }
+.gear-caret { color: var(--text-mute); transition: transform .22s var(--ease-out); font-size: .8rem; }
+.gear-group.open .gear-caret { transform: rotate(180deg); }
+.gear-count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill);
+  font-size: .72rem; font-weight: 700; display: none; place-items: center;
+  background: var(--blue-50); color: var(--accent-strong);
+}
+.gear-count.on { display: grid; }
+.gear-body { display: none; padding: 0 14px 14px; }
+.gear-group.open .gear-body { display: block; animation: gearIn .22s var(--ease-out); }
+@keyframes gearIn { from { opacity: 0; transform: translateY(-6px); } }
+.gear-body .pill-select label { font-size: .82rem; padding: 6px 12px; }
+
 /* ---------- Cards ---------- */
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
